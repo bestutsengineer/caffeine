@@ -1,0 +1,54 @@
+#!/bin/sh
+# Caffeine pre-login guard. launchd runs this as root every 30 s (local.caffeine.prelogin-guard).
+# While nobody is logged in, it keeps the Mac awake (pmset disablesleep 1), but only when Caffeine's
+# Keep Awake is on, the Mac is on AC power above MIN_BATTERY %, and there's no thermal warning.
+# Otherwise it restores normal sleep. Once someone logs in it does nothing: Caffeine owns the
+# setting in the user session (and clears it when it quits, e.g. for a restart).
+# Usage: caffeine-prelogin-guard [--dry-run [console-user]]
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+# This root-owned local configuration is created by the operator, never committed.
+CONFIG=/Library/Preferences/local.caffeine.prelogin.plist
+USER_PREFS=$(/usr/libexec/PlistBuddy -c 'Print :PreferencesPath' "$CONFIG" 2>/dev/null)
+# No configured path means unavailable preferences, so the guard restores normal sleep.
+case "$USER_PREFS" in /*/Library/Preferences/local.caffeine.plist) ;; *) USER_PREFS= ;; esac
+MIN_BATTERY=$(/usr/libexec/PlistBuddy -c 'Print :minBatteryPercent' "$USER_PREFS" 2>/dev/null)
+case "$MIN_BATTERY" in ''|*[!0-9]*) MIN_BATTERY=20 ;; esac
+[ "$MIN_BATTERY" -ge 5 ] && [ "$MIN_BATTERY" -le 80 ] || MIN_BATTERY=20
+
+dry_run=0
+console=$(stat -f %Su /dev/console)
+if [ "${1:-}" = "--dry-run" ]; then
+    dry_run=1
+    [ -n "${2:-}" ] && console=$2
+fi
+
+# Someone is logged in: Caffeine decides.
+if [ "$console" != "root" ]; then
+    [ $dry_run = 1 ] && echo "console user $console: left to Caffeine"
+    exit 0
+fi
+
+reason=""
+case "$(/usr/libexec/PlistBuddy -c 'Print :wantAwake' "$USER_PREFS" 2>/dev/null)" in
+    true|1) ;;
+    *) reason="Caffeine is off or preference unavailable" ;;
+esac
+batt=$(pmset -g batt)
+echo "$batt" | grep -q "'AC Power'" || reason=${reason:-"on battery"}
+pct=$(echo "$batt" | grep -Eo '[0-9]+%' | head -n 1 | tr -d %)
+[ "${pct:-0}" -gt "$MIN_BATTERY" ] || reason=${reason:-"battery at ${pct:-?}%"}
+therm=$(pmset -g therm 2>/dev/null) || reason=${reason:-"thermal status unavailable"}
+[ -n "$therm" ] || reason=${reason:-"thermal status unavailable"}
+echo "$therm" | grep -qiE "warning level set to [1-9]" && reason=${reason:-"thermal warning"}
+
+want=1
+[ -n "$reason" ] && want=0
+current=$(pmset -g | awk '$1 == "SleepDisabled" {print $2}')
+if [ $dry_run = 1 ]; then
+    echo "want SleepDisabled=$want (now ${current:-?})${reason:+: $reason}"
+    exit 0
+fi
+if [ "$current" != "$want" ]; then
+    pmset -a disablesleep "$want"
+    logger -t caffeine-prelogin-guard "SleepDisabled ${current:-?} -> $want${reason:+ ($reason)}"
+fi

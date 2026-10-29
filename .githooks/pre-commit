@@ -1,0 +1,15 @@
+#!/bin/sh
+# Scan exactly the staged Git content; never send candidate credentials to a verifier.
+set -eu
+if ! command -v gitleaks >/dev/null 2>&1; then
+    echo 'Install the required scanner: brew install gitleaks' >&2
+    exit 1
+fi
+gitleaks git --pre-commit --staged --ignore-gitleaks-allow --redact=100 --no-banner
+# A local identity is a deliberate choice. Refuse accidental non-no-reply identities
+# when preparing a public release; public contributor aliases are also accepted.
+email=$(git config user.email || true)
+case "$email" in
+    *@users.noreply.github.com|*@example.invalid) ;;
+    *) echo 'Choose a GitHub no-reply address or a project contributor alias before committing.' >&2; exit 1 ;;
+esac
