@@ -10,7 +10,7 @@ enum CLI {
           --on | --off             turn lid-closed awake on or off in the running app
           --refresh                make the running app re-check everything now
           --set key=0|1            virtualDisplay, allowOnBattery, startAtLogin, doubleClickToToggle
-          --set minBatteryPercent=5..80   battery cutoff (default 20%)
+          --set minBatteryPercent=5..80   battery cutoff (default 15%)
           --quit                   quit the app (restores normal sleep)
           --handoff                preserve sleep setting for a guarded app update
           --selftest [--sensors]   offline tests; --sensors adds read-only hardware checks

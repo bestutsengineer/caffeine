@@ -21,7 +21,7 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "virtualDisplay") }
     }
     static var minBatteryPercent: Int {
-        get { max(5, min(80, defaults.object(forKey: "minBatteryPercent") as? Int ?? 20)) }
+        get { max(5, min(80, defaults.object(forKey: "minBatteryPercent") as? Int ?? 15)) }
         set { defaults.set(max(5, min(80, newValue)), forKey: "minBatteryPercent") }
     }
     /// Preserve the old implicit-on setting on upgrades; new profiles start with it off.

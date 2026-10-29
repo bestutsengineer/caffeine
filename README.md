@@ -2,6 +2,12 @@
 
 **Keep your Mac awake—even with the lid closed.** Caffeine is a small macOS menu-bar app for long downloads, background tasks and other work that needs to keep running.
 
+<img src="docs/images/menu.png" alt="Caffeine menu showing Keep Awake enabled, battery status, Options and Diagnostics" width="540">
+
+<img src="docs/images/options.png" alt="Caffeine Options with battery cutoff, virtual display, double-click gesture and sleep and lock settings" width="540">
+
+*Screenshots show a custom 10% cutoff. New installations default to 15%.*
+
 Requires **macOS 14 or later**. It lives in the menu bar, with no Dock icon. This repository provides source code; see [For Developers](#for-developers) to build and install it. No downloadable installer is currently published.
 
 ## How to use
@@ -15,7 +21,7 @@ Requires **macOS 14 or later**. It lives in the menu bar, with no Dock icon. Thi
 
 ## Useful options
 
-- **Allow on Battery:** on by default for new installations; your saved choice is preserved on upgrade. Turn it off to pause protection when you close the lid without a charger. **Battery Cutoff** pauses protection at your chosen percentage; the default is 20%, adjustable from 5–80%.
+- **Allow on Battery:** on by default for new installations; your saved choice is preserved on upgrade. Turn it off to pause protection when you close the lid without a charger. **Battery Cutoff** pauses protection at your chosen percentage; the default is 15%, adjustable from 5–80%.
 - **Start at Login:** opens Caffeine when you sign in and helps it recover after a crash.
 - **macOS Sleep & Lock:** shows your configured sleep, display and password delays. These are settings, not live countdowns. **Lock Screen Settings…** opens the corresponding system settings.
 - **Headless Virtual Display:** leave this off for ordinary use. Enable it only if a screen-sharing or capture app needs a desktop while the lid is closed and no external monitor is connected. It is experimental and may move windows when the temporary display appears or disappears.
