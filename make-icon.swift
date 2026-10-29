@@ -15,29 +15,34 @@ func render(_ pixels: Int) -> Data {
     let path = NSBezierPath(roundedRect: tile, xRadius: tile.width * 0.225, yRadius: tile.width * 0.225)
     NSGradient(colors: [NSColor(calibratedRed: 0.10, green: 0.14, blue: 0.30, alpha: 1),
                         NSColor(calibratedRed: 0.22, green: 0.38, blue: 0.78, alpha: 1)])!.draw(in: path, angle: 90)
-    // Original coffee-bean artwork, drawn from independent Bezier paths.
-    // App branding deliberately does not embed SF Symbols.
-    func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x * size, y: y * size) }
-    let bean = NSBezierPath()
-    bean.move(to: point(0.34, 0.29))
-    bean.curve(to: point(0.68, 0.73), controlPoint1: point(0.10, 0.48), controlPoint2: point(0.47, 0.91))
-    bean.curve(to: point(0.34, 0.29), controlPoint1: point(0.92, 0.52), controlPoint2: point(0.55, 0.10))
-    bean.close()
-    NSColor(calibratedWhite: 0.97, alpha: 1).setFill()
-    bean.fill()
-    let crease = NSBezierPath()
-    crease.move(to: point(0.34, 0.31))
-    crease.curve(to: point(0.65, 0.71), controlPoint1: point(0.62, 0.39), controlPoint2: point(0.39, 0.61))
-    crease.lineWidth = size * 0.045
-    crease.lineCapStyle = .round
-    NSColor(calibratedRed: 0.18, green: 0.31, blue: 0.64, alpha: 1).setStroke()
-    crease.stroke()
-    let spark = NSBezierPath()
-    spark.move(to: point(0.73, 0.45)); spark.line(to: point(0.63, 0.31))
-    spark.line(to: point(0.70, 0.31)); spark.line(to: point(0.66, 0.20))
-    spark.line(to: point(0.81, 0.37)); spark.line(to: point(0.73, 0.37)); spark.close()
-    NSColor(calibratedRed: 1.0, green: 0.72, blue: 0.27, alpha: 1).setFill()
-    spark.fill()
+    // Original 32-grid pixel artwork. Integer grid edges stay crisp at Retina sizes.
+    // The system menu-bar symbol is configured independently in AppDelegate.swift.
+    NSGraphicsContext.current?.shouldAntialias = false
+    let unit = size / 32
+    func block(_ x: Int, _ y: Int, _ w: Int, _ h: Int, _ color: NSColor) {
+        color.setFill()
+        NSRect(x: CGFloat(x) * unit, y: CGFloat(y) * unit,
+               width: CGFloat(w) * unit, height: CGFloat(h) * unit).fill()
+    }
+    let porcelain = NSColor(calibratedWhite: 0.98, alpha: 1)
+    let coffee = NSColor(calibratedRed: 0.22, green: 0.35, blue: 0.62, alpha: 1)
+    // Stepped bowl, rim and hollow handle; no borrowed symbol outlines.
+    block(9, 13, 14, 7, porcelain)
+    block(10, 11, 12, 2, porcelain)
+    block(12, 10, 8, 1, porcelain)
+    block(10, 20, 12, 1, porcelain)
+    block(11, 21, 10, 1, porcelain)
+    block(11, 18, 10, 2, coffee)
+    block(10, 18, 1, 1, coffee)
+    block(21, 18, 1, 1, coffee)
+    block(23, 15, 2, 4, porcelain)
+    block(25, 16, 1, 2, porcelain)
+    block(23, 16, 1, 2, coffee)
+    // Separate stepped saucer leaves a clear gap under the bowl.
+    block(8, 7, 16, 2, porcelain)
+    block(7, 8, 1, 2, porcelain)
+    block(24, 8, 1, 2, porcelain)
+    block(9, 6, 14, 1, porcelain)
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!
 }
