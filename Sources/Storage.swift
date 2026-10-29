@@ -12,6 +12,20 @@ enum Prefs {
         get { defaults.object(forKey: "allowOnBattery") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "allowOnBattery") }
     }
+    /// Opt-in to avoid unexpectedly interrupting existing workloads.
+    static var stopOnSeriousThermal: Bool {
+        get { defaults.bool(forKey: "stopOnSeriousThermal") }
+        set { defaults.set(newValue, forKey: "stopOnSeriousThermal") }
+    }
+    static var thermalStopPending: Bool {
+        get { defaults.bool(forKey: "thermalStopPending") }
+        set { defaults.set(newValue, forKey: "thermalStopPending") }
+    }
+    static var thermalStopReason: String? {
+        get { defaults.string(forKey: "thermalStopReason") }
+        set { defaults.set(newValue, forKey: "thermalStopReason") }
+    }
+    static func persistSafetyState() { defaults.synchronize() }
     static var doubleClickToToggle: Bool {
         get { defaults.object(forKey: "doubleClickToToggle") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "doubleClickToToggle") }

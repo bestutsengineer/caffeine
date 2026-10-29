@@ -23,16 +23,16 @@ Requires **macOS 14 or later**. It lives in the menu bar, with no Dock icon. Thi
 
 - **Allow on Battery:** on by default for new installations; your saved choice is preserved on upgrade. Turn it off to pause protection when you close the lid without a charger. **Battery Cutoff** pauses protection at your chosen percentage; the default is 15%, adjustable from 5–80%.
 - **Start at Login:** opens Caffeine when you sign in and helps it recover after a crash.
-- **macOS Sleep & Lock:** shows your configured sleep, display and password delays. These are settings, not live countdowns. **Lock Screen Settings…** opens the corresponding system settings.
+- **Diagnostics → macOS Sleep & Lock:** shows your configured sleep, display and password delays. These are settings, not live countdowns. **Diagnostics → Lock Screen Settings…** opens the corresponding system settings.
 - **Headless Virtual Display:** leave this off for ordinary use. Enable it only if a screen-sharing or capture app needs a desktop while the lid is closed and no external monitor is connected. It is experimental and may move windows when the temporary display appears or disappears.
 
 ## Sleep and screen locking
 
 Caffeine keeps the **computer** awake. The display can still turn off, and macOS can still lock the screen. Apps normally keep running while locked, but some apps or screen-sharing tools may pause or ask you to sign in again.
 
-Caffeine does not change your password or locking settings. For more detail, open **Options → Sleep, Lock & Security…**.
+Caffeine does not change your password or locking settings. For more detail, open **Diagnostics → Sleep, Lock & Security…**.
 
-Protection pauses for low battery, critical temperature or unavailable required sensors, and resumes when the condition clears. Checks run about every five seconds. Keep the Mac ventilated; do not put it in a bag while it is running. **Diagnostics** provides status and logs if something seems wrong. **Open Performance Logs** contains minute-by-minute system CPU use, CPU temperature (where available) and macOS thermal state for the last 30 days while the app is running. CPU use is the average since the prior sample; CPU temperature is the hottest reported performance/efficiency-core sensor; the separate thermal state is a category. The typical range is the 5th–95th percentile of this Mac’s last 30 days of samples taken with the lid known open and input in the previous five minutes; it needs at least 30 readings over 30 minutes. Readings use private macOS sensor APIs and may be unavailable on some Macs. Sleep and app downtime leave gaps.
+Low battery or unavailable required sensors pause protection until the condition clears. Critical thermal pressure turns Keep Awake off and leaves it off until you turn it back on. If the lid is closed, Caffeine restores normal sleep and retries its sleep request every 30 seconds until it observes sleep and wake or the lid opens. In Options, **Turn Off for Sustained Serious Heat** optionally also turns it off after 60 seconds of serious thermal pressure; it is off by default. Checks run about every five seconds. Thermal protection depends on macOS reporting the state, the app running, and permission to restore sleep. Keep the Mac ventilated; do not put it in a bag while it is running. **Diagnostics** provides status and logs if something seems wrong. **Open Performance Logs** contains minute-by-minute system CPU use, CPU temperature (where available) and macOS thermal state for the last 30 days while the app is running. CPU use is the average since the prior sample; CPU temperature is the hottest reported performance/efficiency-core sensor; the separate thermal state is a category. The typical range is the 5th–95th percentile of this Mac’s last 30 days of samples taken with the lid known open and input in the previous five minutes; it needs at least 30 readings over 30 minutes. Readings use private macOS sensor APIs and may be unavailable on some Macs. Sleep and app downtime leave gaps.
 
 ## For Developers
 
@@ -70,6 +70,7 @@ Run `~/Applications/Caffeine.app/Contents/MacOS/Caffeine` with:
 ```text
 --status | --on | --off | --refresh | --quit
 --set allowOnBattery=0|1
+--set stopOnSeriousThermal=0|1
 --set minBatteryPercent=5..80
 --set doubleClickToToggle=0|1
 --set virtualDisplay=0|1

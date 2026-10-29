@@ -8,11 +8,13 @@ struct KeepAwakeConfiguration: Codable, Equatable {
     var startAtLogin: Bool
 
     var doubleClickToToggle: Bool? = nil
+    var stopOnSeriousThermal: Bool? = nil
 
     static var current: KeepAwakeConfiguration {
         KeepAwakeConfiguration(wantAwake: Prefs.wantAwake, allowOnBattery: Prefs.allowOnBattery,
                                minBatteryPercent: Prefs.minBatteryPercent, virtualDisplay: Prefs.virtualDisplay,
-                               startAtLogin: LoginItem.isEnabled, doubleClickToToggle: Prefs.doubleClickToToggle)
+                               startAtLogin: LoginItem.isEnabled, doubleClickToToggle: Prefs.doubleClickToToggle,
+                               stopOnSeriousThermal: Prefs.stopOnSeriousThermal)
     }
 }
 

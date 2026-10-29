@@ -9,7 +9,7 @@ enum CLI {
           --status                 full status report (works without the app running)
           --on | --off             turn lid-closed awake on or off in the running app
           --refresh                make the running app re-check everything now
-          --set key=0|1            virtualDisplay, allowOnBattery, startAtLogin, doubleClickToToggle
+          --set key=0|1            virtualDisplay, allowOnBattery, startAtLogin, doubleClickToToggle, stopOnSeriousThermal
           --set minBatteryPercent=5..80   battery cutoff (default 15%)
           --quit                   quit the app (restores normal sleep)
           --handoff                preserve sleep setting for a guarded app update
@@ -55,7 +55,7 @@ enum CLI {
         let pair = value.split(separator: "=", omittingEmptySubsequences: false)
         guard pair.count == 2 else { return false }
         if pair[0] == "minBatteryPercent" { return Int(pair[1]).map { (5...80).contains($0) } ?? false }
-        return ["virtualDisplay", "allowOnBattery", "startAtLogin", "doubleClickToToggle"].contains(String(pair[0])) && ["0", "1"].contains(String(pair[1]))
+        return ["virtualDisplay", "allowOnBattery", "startAtLogin", "doubleClickToToggle", "stopOnSeriousThermal"].contains(String(pair[0])) && ["0", "1"].contains(String(pair[1]))
     }
 
     /// Posts a command to the running app and waits until it publishes state tagged with our ID.

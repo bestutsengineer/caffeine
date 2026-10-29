@@ -77,7 +77,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var sleepDisabled = false
     private var decision: GuardDecision = .allow
     private var permissionProblem: String?
-    private var sleepRequested = false
+    private var thermalPolicy = ThermalStopPolicy()
+    private var sleepRetry = SleepRetryPolicy()
+    private var sleepRequestProblem: String?
     private var unexpectedSleepAt: Date?
     private var lidPausedReason: String?
     private var lastResult = Prefs.lastResult
@@ -85,7 +87,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var isActive: Bool { Prefs.wantAwake && decision == .allow && sleepDisabled }
 
     private var headline: String {
-        if !Prefs.wantAwake { return "Off: follows macOS sleep settings" }
+        if !Prefs.wantAwake {
+            if let reason = Prefs.thermalStopReason { return "Off: \(reason)" }
+            return "Off: follows macOS sleep settings"
+        }
         if let reason = decision.reason { return "Paused: \(reason)" }
         if !sleepDisabled { return "Not active: can't change the sleep setting" }
         if !power.onAC && !Prefs.allowOnBattery { return "On, but on battery: closing the lid will sleep" }
@@ -225,6 +230,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func reconcile() {
+        let thermalReason = thermalPolicy.evaluate(thermal: thermal, enabled: Prefs.stopOnSeriousThermal,
+                                                   now: ProcessInfo.processInfo.systemUptime)
+        if Prefs.wantAwake, let reason = thermalReason {
+            Prefs.thermalStopReason = reason
+            Prefs.thermalStopPending = true
+            Prefs.wantAwake = false
+            Prefs.persistSafetyState()
+            lastApply = .distantPast
+            log("thermal_keep_awake_disabled", ["reason": reason])
+        }
         let want = Prefs.wantAwake
         let input = GuardInput(lidClosed: lidClosed, onAC: power.onAC, batteryPercent: power.batteryPercent,
                                thermal: thermal, allowOnBattery: Prefs.allowOnBattery,
@@ -244,15 +259,28 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if shouldDisableSleep { assertion.hold() } else { assertion.release() }
         updateVirtualDisplay()
 
-        // A guard tripped with the lid shut (e.g. unplugged and put in a bag): sleep now rather than wait.
-        if want, let reason = newDecision.reason, lidClosed {
-            if !sleepRequested {
-                sleepRequested = true
-                requestSleep(reason)
+        let recoveryNeeded = Prefs.thermalStopPending || (want && newDecision != .allow)
+        if recoveryNeeded {
+            // Re-read the actual kernel setting: after a crash our cached state can be stale.
+            sleepObservation = Pmset.observeSleepDisabled()
+            if sleepObservation?.value != false { apply(false) }
+            if Prefs.thermalStopPending, observedLidClosed == false, sleepObservation?.value == false {
+                Prefs.thermalStopPending = false
+                Prefs.persistSafetyState()
+                sleepRetry.reset()
+                sleepRequestProblem = nil
+                log("thermal_recovery_complete", ["reason": "lid open; normal sleep restored"])
+            } else if sleepRetry.shouldRequest(pending: true, lidClosed: observedLidClosed,
+                                                normalSleepConfirmed: sleepObservation?.value == false,
+                                                now: ProcessInfo.processInfo.systemUptime) {
+                let reason = Prefs.thermalStopReason ?? newDecision.reason ?? "Safety guard"
+                if simulation.isEmpty {
+                    let accepted = Pmset.sleepNow()
+                    sleepRequestProblem = accepted ? "Sleep not yet observed; retrying if needed" : "Sleep request failed; retrying"
+                    log("sleep_now", ["reason": reason, "accepted": accepted, "retrySeconds": 30])
+                } else { log("sleep_now", ["reason": reason, "simulated": true]) }
             }
-        } else {
-            sleepRequested = false
-        }
+        } else { sleepRetry.reset(); sleepRequestProblem = nil }
     }
 
     private func apply(_ disable: Bool) {
@@ -277,19 +305,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if let problem = permissionProblem, problem != previousProblem {
             log("apply_failed", ["reason": problem, "wanted": disable])
-        }
-    }
-
-    private func requestSleep(_ reason: String) {
-        guard simulation.isEmpty else {
-            log("sleep_now", ["reason": reason, "simulated": true])
-            return
-        }
-        log("sleep_now", ["reason": reason])
-        // Give powerd a moment after SleepDisabled clears; it may already be sleeping on its own.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [self] in
-            guard Sensors.lidClosed() == true, Prefs.wantAwake, decision != .allow else { return }
-            Pmset.sleepNow()
         }
     }
 
@@ -406,6 +421,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func didWake() {
         let now = Date()
         readFastSensors()
+        if Prefs.thermalStopPending && systemSleepAt != nil {
+            sleepObservation = Pmset.observeSleepDisabled()
+            if sleepObservation?.value == false {
+                Prefs.thermalStopPending = false
+                Prefs.persistSafetyState()
+                sleepRetry.reset()
+                sleepRequestProblem = nil
+                log("thermal_recovery_complete", ["reason": "system sleep and wake observed"])
+            }
+        }
         let correlationID = systemSleepID ?? UUID().uuidString
         log("system_did_wake", ["correlationID": correlationID, "notificationSource": "NSWorkspace",
                                 "willSleepNotificationObserved": systemSleepAt != nil,
@@ -596,12 +621,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         tooltip: "Adds a temporary desktop only when no real screen is active. Leave off for ordinary use."),
                 MenuRow(title: "When to Use This…", kind: .action, action: #selector(showVirtualDisplayHelp))
             ])),
+            MenuRow(title: "Turn Off for Sustained Serious Heat", kind: .toggle(Prefs.stopOnSeriousThermal),
+                    action: #selector(toggleSeriousThermal),
+                    tooltip: "Turns Keep Awake off after 60 seconds of serious thermal pressure. Critical pressure always turns it off."),
             MenuRow(title: "Double-Click Icon to Toggle Keep Awake", kind: .toggle(Prefs.doubleClickToToggle),
                     action: #selector(toggleDoubleClick), tooltip: "Single-click opens this menu after the double-click interval. Right-click opens it immediately."),
             .separator,
-            MenuRow(title: "macOS Sleep & Lock", kind: .submenu(systemTimingRows())),
-            MenuRow(title: "Sleep, Lock & Security…", kind: .action, symbol: "lock", action: #selector(showSecurityHelp)),
-            MenuRow(title: "Lock Screen Settings…", kind: .action, action: #selector(openLockScreenSettings)),
             MenuRow(title: "Start at Login", kind: .toggle(LoginItem.isEnabled), action: #selector(toggleLoginItem)),
         ])))
         let typicalTemperature = temperatures.1.map { String(format: "Typical CPU, active + lid open: %.0f–%.0f °C", $0.0, $0.1) } ?? "Typical CPU: collecting readings"
@@ -611,10 +636,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ]
         if let s = snapshot { details.append(info(Describe.displays(s.displays))) }
         if let reason = virtualDisplaySuspensionReason { details.append(warning(reason)) }
+        if let problem = sleepRequestProblem { details.append(warning(problem)) }
         if let result = lastResult {
             details.append(result.failed ? warning(result.summary) : info(result.summary))
         } else { details.append(info("No lid test yet")) }
         details += [.separator,
+            MenuRow(title: "macOS Sleep & Lock", kind: .submenu(systemTimingRows())),
+            MenuRow(title: "Sleep, Lock & Security…", kind: .action, symbol: "lock", action: #selector(showSecurityHelp)),
+            MenuRow(title: "Lock Screen Settings…", kind: .action, action: #selector(openLockScreenSettings)),
+            .separator,
             MenuRow(title: "Open Event Log", kind: .action, action: #selector(openLog)),
             MenuRow(title: "Open Performance Logs", kind: .action, action: #selector(openPerformanceLog)),
             MenuRow(title: "Copy Diagnostics", kind: .action, action: #selector(copyDiagnostics))]
@@ -716,6 +746,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleAwake() { setWantAwake(!Prefs.wantAwake) }
 
     private func setWantAwake(_ on: Bool) {
+        if on && (Prefs.thermalStopPending || thermal == "critical" || (Prefs.stopOnSeriousThermal && thermal == "serious")) {
+            log("thermal_reenable_blocked", ["thermal": thermal])
+            return
+        }
+        if on { Prefs.thermalStopReason = nil }
         Prefs.wantAwake = on
         lastApply = .distantPast
         permissionProblem = nil
@@ -728,6 +763,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleVirtualDisplay() {
         Prefs.virtualDisplay.toggle()
+        reconcile()
+        writeState()
+    }
+
+    @objc private func toggleSeriousThermal() {
+        Prefs.stopOnSeriousThermal.toggle()
+        log("serious_thermal_policy_changed", ["enabled": Prefs.stopOnSeriousThermal])
         reconcile()
         writeState()
     }
@@ -893,6 +935,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 case "virtualDisplay": Prefs.virtualDisplay = kv[1] == "1"
                 case "doubleClickToToggle": Prefs.doubleClickToToggle = kv[1] == "1"
                 case "allowOnBattery": Prefs.allowOnBattery = kv[1] == "1"
+                case "stopOnSeriousThermal": Prefs.stopOnSeriousThermal = kv[1] == "1"
                 case "startAtLogin": setLoginItem(kv[1] == "1")
                 case "minBatteryPercent":
                     if let percent = Int(kv[1]), (5...80).contains(percent) { setBatteryCutoff(percent) }

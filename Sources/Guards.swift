@@ -39,6 +39,29 @@ enum Guards {
     }
 }
 
+/// Sustained serious pressure is optional; critical always stops keep-awake immediately.
+struct ThermalStopPolicy {
+    private var seriousSince: TimeInterval?
+    mutating func evaluate(thermal: String, enabled: Bool, now: TimeInterval) -> String? {
+        if thermal == "critical" { seriousSince = nil; return "Critical thermal pressure" }
+        guard thermal == "serious", enabled else { seriousSince = nil; return nil }
+        if seriousSince == nil { seriousSince = now }
+        return now - (seriousSince ?? now) >= 60 ? "Sustained serious thermal pressure" : nil
+    }
+}
+
+/// Throttles explicit sleep requests while waiting for an actual system-sleep event.
+struct SleepRetryPolicy {
+    private var lastAttempt: TimeInterval?
+    mutating func shouldRequest(pending: Bool, lidClosed: Bool?, normalSleepConfirmed: Bool, now: TimeInterval) -> Bool {
+        guard pending, lidClosed == true, normalSleepConfirmed else { return false }
+        if let lastAttempt, now - lastAttempt < 30 { return false }
+        lastAttempt = now
+        return true
+    }
+    mutating func reset() { lastAttempt = nil }
+}
+
 /// Watches lid-closed stretches. The app beats every few seconds; because timers stop while the
 /// Mac sleeps, a long gap between beats means the Mac was asleep.
 final class LidTracker {

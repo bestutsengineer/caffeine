@@ -16,6 +16,7 @@ enum SelfTest {
 
     static func run(live: Bool, sensors: Bool = false) -> Int32 {
         guardTests()
+        thermalSafetyTests()
         parserTests()
         diagnosticTests()
         virtualDisplayPolicyTests()
@@ -94,6 +95,26 @@ enum SelfTest {
             check(range?.0 == 50 && range?.1 == 50, "baseline excludes closed or inactive samples")
 
         } catch { check(false, "performance retention test: \(error)") }
+    }
+
+    private static func thermalSafetyTests() {
+        print("== Thermal safety")
+        var thermal = ThermalStopPolicy()
+        check(thermal.evaluate(thermal: "serious", enabled: false, now: 0) == nil, "serious pressure is configurable")
+        check(thermal.evaluate(thermal: "serious", enabled: true, now: 10) == nil, "brief serious pressure does not stop keep-awake")
+        check(thermal.evaluate(thermal: "serious", enabled: true, now: 69) == nil, "serious pressure must persist for 60 seconds")
+        check(thermal.evaluate(thermal: "serious", enabled: true, now: 70) != nil, "sustained serious pressure stops keep-awake")
+        check(thermal.evaluate(thermal: "fair", enabled: true, now: 71) == nil, "cooling resets sustained pressure timer")
+        check(thermal.evaluate(thermal: "serious", enabled: true, now: 72) == nil, "serious timer starts again after cooling")
+        check(thermal.evaluate(thermal: "critical", enabled: false, now: 73) != nil, "critical pressure always stops immediately")
+        var retry = SleepRetryPolicy()
+        check(!retry.shouldRequest(pending: true, lidClosed: nil, normalSleepConfirmed: true, now: 0), "unknown lid never forces sleep")
+        check(!retry.shouldRequest(pending: true, lidClosed: true, normalSleepConfirmed: false, now: 0), "wait for normal sleep setting before requesting sleep")
+        check(retry.shouldRequest(pending: true, lidClosed: true, normalSleepConfirmed: true, now: 1), "request sleep after normal sleep is confirmed")
+        check(!retry.shouldRequest(pending: true, lidClosed: true, normalSleepConfirmed: true, now: 30), "failed or unobserved sleep is rate limited")
+        check(retry.shouldRequest(pending: true, lidClosed: true, normalSleepConfirmed: true, now: 31), "retry unobserved sleep after 30 seconds")
+        check(!retry.shouldRequest(pending: false, lidClosed: true, normalSleepConfirmed: true, now: 90), "stop retrying after recovery")
+        check(CLI.validSetting("stopOnSeriousThermal=1") && !CLI.validSetting("stopOnSeriousThermal=2"), "serious heat setting accepts only boolean values")
     }
 
     private static func guardTests() {
