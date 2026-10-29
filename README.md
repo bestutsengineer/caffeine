@@ -1,6 +1,6 @@
 # Caffeine
 
-**Keep your Mac awake—even with the lid closed.** Caffeine is a small macOS menu-bar app for long downloads, background tasks and other work that needs to keep running.
+**Keep your Mac awake—even with the lid closed.** Caffeine is a small macOS menu-bar app for long downloads, background tasks and other work that needs to keep running. Especially if you got long running tasks on Codex or Claude - just connect to hotspot and chuck your macBook in your bag and keep it running, how cool is that? Though don't do that for heavy tasks! It might overheat in the backpack! It has overheat protection logic but it's not fully tested yet.
 
 <img src="docs/images/menu.png" alt="Caffeine menu showing Keep Awake enabled, battery status, Options and Diagnostics" width="540">
 
