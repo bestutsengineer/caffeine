@@ -2,9 +2,7 @@
 
 **Keep your Mac awake—even with the lid closed.** Caffeine is a small macOS menu-bar app for long downloads, background tasks and other work that needs to keep running.
 
-Requires **macOS 14 or later**. It lives in the menu bar, with no Dock icon. Download the universal `.pkg` from [Releases](https://github.com/bestutsengineer/caffeine/releases/latest), run the installer, then open **Caffeine** in Applications. Supports Apple silicon and Intel. The package is unsigned and not notarized, so macOS may block it. You can also [build from source](#for-developers).
-
-Before updating, open the lid and quit Caffeine. The installer refuses to proceed while the app is running and installs to `/Applications/Caffeine.app`. If you previously built a copy in your personal Applications folder, remove that older copy after quitting to avoid opening the wrong version.
+Requires **macOS 14 or later**. It lives in the menu bar, with no Dock icon. This repository provides source code; see [For Developers](#for-developers) to build and install it. No downloadable installer is currently published.
 
 ## How to use
 
@@ -13,11 +11,11 @@ Before updating, open the lid and quit Caffeine. The installer refuses to procee
 3. Check the status before closing the lid. A **filled cup** means Caffeine is keeping your Mac awake; an **outline cup** means it is off. A **warning triangle** means protection is paused—open the menu for the reason.
 4. Turn Keep Awake off, or choose **Quit**, to restore normal sleep.
 
-**Shortcut:** double-click the cup to toggle Keep Awake. Single-click opens the menu after a short delay; right-click opens it immediately. You can disable double-click toggling in **Options**.
+**Shortcut:** double-click the cup to toggle Keep Awake. Single-click opens the menu below the cup after a short delay; right-click opens it immediately. You can disable double-click toggling in **Options**.
 
 ## Useful options
 
-- **Allow on Battery:** off by default. Enable it to keep working without a charger. **Battery Cutoff** pauses protection at your chosen percentage; the default is 20%, adjustable from 5–80%.
+- **Allow on Battery:** on by default for new installations; your saved choice is preserved on upgrade. Turn it off to pause protection when you close the lid without a charger. **Battery Cutoff** pauses protection at your chosen percentage; the default is 20%, adjustable from 5–80%.
 - **Start at Login:** opens Caffeine when you sign in and helps it recover after a crash.
 - **macOS Sleep & Lock:** shows your configured sleep, display and password delays. These are settings, not live countdowns. **Lock Screen Settings…** opens the corresponding system settings.
 - **Headless Virtual Display:** leave this off for ordinary use. Enable it only if a screen-sharing or capture app needs a desktop while the lid is closed and no external monitor is connected. It is experimental and may move windows when the temporary display appears or disappears.

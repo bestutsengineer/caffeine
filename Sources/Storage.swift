@@ -9,7 +9,7 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "wantAwake") }
     }
     static var allowOnBattery: Bool {
-        get { defaults.bool(forKey: "allowOnBattery") }
+        get { defaults.object(forKey: "allowOnBattery") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "allowOnBattery") }
     }
     static var doubleClickToToggle: Bool {
