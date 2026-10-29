@@ -644,12 +644,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     private func showIconMenu() {
         pendingIconMenu = nil
-        guard let button = statusItem.button else { return }
-        // Let AppKit anchor the pull-down below the status item, as in Tailnet.
-        // Attach only during tracking so custom double-click handling remains available.
-        statusItem.menu = menu
-        defer { statusItem.menu = nil }
-        button.performClick(nil)
+        guard statusItem.button != nil else { return }
+        // Open directly after the double-click delay, anchored below the status item.
+        statusItem.popUpMenu(menu)
     }
     @objc private func toggleDoubleClick() {
         Prefs.doubleClickToToggle.toggle()
