@@ -84,12 +84,19 @@ enum SystemTimingReader {
     }
 }
 
-enum IconClick {
-    enum Action: Equatable { case showMenu, deferMenu, toggle, ignore }
-    static func action(clickCount: Int, rightButton: Bool, controlClick: Bool = false, enabled: Bool) -> Action {
-        if rightButton || controlClick || !enabled { return .showMenu }
-        if clickCount == 1 { return .deferMenu }
-        if clickCount == 2 { return .toggle }
-        return .ignore
+struct IconClickSequence {
+    enum Action: Equatable { case menu, toggle, ignore }
+    private var count = 0
+    private var deadline: TimeInterval?
+    mutating func receive(clickCount: Int, at now: TimeInterval, interval: TimeInterval) {
+        count = min(max(clickCount, 1), 3)
+        deadline = now + interval
     }
+    mutating func resolve(at now: TimeInterval) -> Action? {
+        guard let deadline, now >= deadline else { return nil }
+        let result: Action = count >= 3 ? .ignore : (count == 2 ? .toggle : .menu)
+        cancel()
+        return result
+    }
+    mutating func cancel() { count = 0; deadline = nil }
 }

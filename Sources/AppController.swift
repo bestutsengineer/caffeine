@@ -52,8 +52,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var systemSleepAt: Date?
     private var systemSleepID: String?
     private var currentIcon = ""
-    private var pendingIconMenu: DispatchWorkItem?
-    private var iconClickGeneration = 0
+    private var clickTimer: Timer?
+    private var clicks = IconClickSequence()
 
     private let debug = ProcessInfo.processInfo.environment["CAFFEINE_DEBUG"] == "1"
     private var simulation: [String: String] = [:]
@@ -624,37 +624,36 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func iconClicked(_ sender: NSStatusBarButton) {
-        guard let event = NSApp.currentEvent else { showIconMenu(); return }
-        pendingIconMenu?.cancel()
-        iconClickGeneration += 1
-        switch IconClick.action(clickCount: event.clickCount, rightButton: event.type == .rightMouseUp,
-                                controlClick: event.modifierFlags.contains(.control), enabled: Prefs.doubleClickToToggle) {
-        case .toggle: setWantAwake(!Prefs.wantAwake)
-        case .showMenu: showIconMenu()
-        case .deferMenu:
-            let generation = iconClickGeneration
-            let work = DispatchWorkItem { [weak self] in
-                guard let self, self.iconClickGeneration == generation else { return }
-                self.showIconMenu()
-            }
-            pendingIconMenu = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: work)
-        case .ignore: break
+        guard let event = NSApp.currentEvent else { return }
+        clickTimer?.invalidate()
+        if event.type == .rightMouseUp || event.modifierFlags.contains(.control) || !Prefs.doubleClickToToggle {
+            clicks.cancel()
+            showIconMenu()
+            return
         }
+        let interval = NSEvent.doubleClickInterval
+        clicks.receive(clickCount: event.clickCount, at: ProcessInfo.processInfo.systemUptime, interval: interval)
+        let timer = Timer(timeInterval: interval + 0.02, repeats: false) { [weak self] _ in
+            guard let self, let action = self.clicks.resolve(at: ProcessInfo.processInfo.systemUptime) else { return }
+            switch action {
+            case .menu: self.showIconMenu()
+            case .toggle: self.setWantAwake(!Prefs.wantAwake)
+            case .ignore: break
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        clickTimer = timer
     }
     private func showIconMenu() {
-        pendingIconMenu = nil
-        guard statusItem.button != nil else { return }
-        // Attach the native status menu only while tracking: this preserves custom double-click handling.
-        // The direct status-item popup works after a deferred single click, without a synthetic click.
+        guard let button = statusItem.button else { return }
         statusItem.menu = menu
         defer { statusItem.menu = nil }
-        statusItem.popUpMenu(menu)
+        button.performClick(nil)
     }
     @objc private func toggleDoubleClick() {
         Prefs.doubleClickToToggle.toggle()
-        pendingIconMenu?.cancel()
-        iconClickGeneration += 1
+        clickTimer?.invalidate()
+        clicks.cancel()
         updateIcon()
         writeState()
     }
