@@ -22,6 +22,10 @@
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSLocationUsageDescription</key>
+	<string>Caffeine uses Wi-Fi location access only to identify and connect to your recent Personal Hotspot when hotspot fallback is enabled.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Caffeine uses Wi-Fi location access only to identify and connect to your recent Personal Hotspot when hotspot fallback is enabled.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Built locally. Keeps this Mac awake with the lid closed.</string>
 </dict>

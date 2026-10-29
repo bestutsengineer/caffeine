@@ -22,6 +22,7 @@ enum CLI {
     static func run(_ args: [String]) -> Int32 {
         let value = args.dropFirst().first ?? ""
         switch args.first ?? "" {
+        case "--hotspot-worker": return HotspotWorker.run(inspect: args.contains("--inspect"))
         case "--status":
             print(Describe.report(Snapshot.capture(), app: AppState.running()))
             return 0

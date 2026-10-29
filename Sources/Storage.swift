@@ -8,6 +8,10 @@ enum Prefs {
         get { defaults.bool(forKey: "wantAwake") }
         set { defaults.set(newValue, forKey: "wantAwake") }
     }
+    static var autoHotspot: Bool {
+        get { defaults.bool(forKey: "autoHotspot") }
+        set { defaults.set(newValue, forKey: "autoHotspot") }
+    }
     static var allowOnBattery: Bool {
         get { defaults.object(forKey: "allowOnBattery") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "allowOnBattery") }

@@ -1,4 +1,5 @@
 import AppKit
+import CoreLocation
 
 struct MenuRow {
     enum Kind {
@@ -36,6 +37,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let menu = NSMenu()
     private let assertion = SleepAssertion()
     private let virtualDisplay = VirtualDisplay()
+    private let hotspot = HotspotMonitor()
+    private lazy var hotspotLocation = CLLocationManager()
     private let tracker = LidTracker()
     private var timer: Timer?
     private var activity: NSObjectProtocol?
@@ -109,6 +112,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Prefs.migrateVirtualDisplayPreference()
+        if Prefs.autoHotspot { hotspot.start() }
         // Keep timers on schedule (no App Nap) without holding the system awake by itself.
         activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep,
                                                          reason: "Caffeine watches lid and power state")
@@ -161,6 +165,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        hotspot.stop()
         virtualDisplay.destroy()
         assertion.release()
         if handingOff {
@@ -660,6 +665,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             MenuRow(title: "Turn Off for Sustained Serious Heat", kind: .toggle(Prefs.stopOnSeriousThermal),
                     action: #selector(toggleSeriousThermal),
                     tooltip: "Turns Keep Awake off after 60 seconds of serious thermal pressure. Critical pressure always turns it off."),
+            MenuRow(title: "Personal Hotspot Fallback", kind: .submenu([
+                MenuRow(title: "Connect Automatically When Offline", kind: .toggle(Prefs.autoHotspot), action: #selector(toggleAutoHotspot)),
+                info("Status: \(hotspot.status)"),
+                MenuRow(title: "How This Works…", kind: .action, action: #selector(showHotspotHelp)),
+                MenuRow(title: "Location Settings…", kind: .action, action: #selector(openHotspotLocationSettings))
+            ])),
             MenuRow(title: "Double-Click Icon to Toggle Keep Awake", kind: .toggle(Prefs.doubleClickToToggle),
                     action: #selector(toggleDoubleClick), tooltip: "Single-click opens this menu after the double-click interval. Right-click opens it immediately."),
             .separator,
@@ -780,6 +791,28 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Actions
 
     @objc private func toggleAwake() { setWantAwake(!Prefs.wantAwake) }
+
+    @objc private func toggleAutoHotspot() {
+        if Prefs.autoHotspot { Prefs.autoHotspot = false; hotspot.stop(); return }
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "Enable Personal Hotspot Fallback?"
+        alert.informativeText = "Caffeine checks internet access using Apple and Cloudflare, and may switch to your recent Personal Hotspot when offline. Switching can interrupt connections and use mobile data. macOS requires Location permission to read Wi-Fi names. This feature is experimental."
+        alert.addButton(withTitle: "Enable")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Prefs.autoHotspot = true
+        if hotspotLocation.authorizationStatus == .notDetermined { hotspotLocation.requestWhenInUseAuthorization() }
+        hotspot.start()
+    }
+
+    @objc private func showHotspotHelp() {
+        showAlert("Personal Hotspot Fallback", "Off by default. Caffeine checks internet access through Apple and Cloudflare. After three failed checks it tries your most recently connected Personal Hotspot, waiting at least five minutes before trying again. The Apple device must be nearby and available through Instant Hotspot. Wi-Fi scanning needs Location permission. This experimental feature uses undocumented macOS interfaces, may interrupt connections and can use mobile data. Caffeine does not store the hotspot password.")
+    }
+
+    @objc private func openHotspotLocationSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices") { NSWorkspace.shared.open(url) }
+    }
 
     private func setWantAwake(_ on: Bool) {
         if on && (Prefs.thermalStopPending || thermal == "critical" || (Prefs.stopOnSeriousThermal && thermal == "serious")) {

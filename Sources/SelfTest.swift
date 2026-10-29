@@ -1,5 +1,33 @@
 import AppKit
 
+private final class FakeHotspotDevice: NSObject {
+    @objc let deviceName: String
+    init(_ name: String) { deviceName = name }
+}
+
+private final class FakeHotspotSession: NSObject {
+    @objc weak var delegate: NSObject?
+    var requestedName: String?
+    var failFirst = false
+    var usedFallback = false
+    @objc func startBrowsing() {
+        _ = delegate?.perform(NSSelectorFromString("updatedFoundDeviceList:"),
+                              with: [FakeHotspotDevice("Other phone"), FakeHotspotDevice("Recent phone")] as NSArray)
+    }
+    @objc func stopBrowsing() {}
+    @objc func enableRemoteHotspotForDevice(_ device: FakeHotspotDevice,
+                                           withCompletionHandler completion: @escaping (AnyObject?, AnyObject?) -> Void) {
+        requestedName = device.deviceName
+        if failFirst { completion(nil, nil) }
+        else { completion(device.deviceName as NSString, "test-only" as NSString) }
+    }
+    @objc func enableHotspotForDevice(_ device: FakeHotspotDevice,
+                                    withCompletionHandler completion: @escaping (AnyObject?, AnyObject?) -> Void) {
+        usedFallback = true
+        completion(device.deviceName as NSString, "test-only" as NSString)
+    }
+}
+
 enum SelfTest {
     private static var failures = 0
 
@@ -19,6 +47,7 @@ enum SelfTest {
         thermalSafetyTests()
         sleepOwnershipTests()
         assertionTests()
+        hotspotPolicyTests()
         parserTests()
         diagnosticTests()
         virtualDisplayPolicyTests()
@@ -31,6 +60,39 @@ enum SelfTest {
         if live { liveTests() }
         print(failures == 0 ? "\nAll checks passed." : "\n\(failures) check(s) FAILED.")
         return failures == 0 ? 0 : 1
+    }
+
+    private static func hotspotPolicyTests() {
+        print("== Hotspot fallback policy")
+        let older = HotspotProfile(name: "Old", lastConnected: Date(timeIntervalSince1970: 1), personal: true)
+        let newer = HotspotProfile(name: "New", lastConnected: Date(timeIntervalSince1970: 2), personal: true)
+        let wifi = HotspotProfile(name: "Wi-Fi", lastConnected: Date(timeIntervalSince1970: 3), personal: false)
+        check(HotspotProfile.mostRecent(in: [older, newer, wifi])?.name == "New", "select most recently connected personal hotspot")
+        check(HotspotProfile.mostRecent(in: [wifi]) == nil, "never choose an ordinary Wi-Fi network")
+        var policy = HotspotRetryPolicy()
+        check(!policy.observe(online: false, now: 0), "one failed check cannot switch networks")
+        check(!policy.observe(online: false, now: 60), "two failed checks cannot switch networks")
+        check(!policy.observe(online: true, now: 120), "working internet resets failure count")
+        check(!policy.observe(online: false, now: 180) && !policy.observe(online: false, now: 240), "new failures start a fresh count")
+        check(policy.observe(online: false, now: 300), "three failed checks permit one attempt")
+        check(!policy.observe(online: false, now: 360) && !policy.observe(online: false, now: 420)
+              && !policy.observe(online: false, now: 480), "retries are rate limited")
+        check(policy.observe(online: false, now: 600), "retry allowed after cooldown")
+        policy.reset()
+        check(!policy.observe(online: false, now: 601), "disabling resets the policy")
+        let fake = FakeHotspotSession()
+        var result: (name: String, password: String)?
+        let discovery = HotspotDiscovery(name: "Recent phone", sessionFactory: { fake }) { result = $0 }
+        discovery.start()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        check(fake.requestedName == "Recent phone" && result?.name == "Recent phone" && result?.password == "test-only",
+              "discovery selects matching device and handles private-API callback")
+        let fallback = FakeHotspotSession(); fallback.failFirst = true
+        var fallbackResult: (name: String, password: String)?
+        let fallbackDiscovery = HotspotDiscovery(name: "Recent phone", sessionFactory: { fallback }) { fallbackResult = $0 }
+        fallbackDiscovery.start()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        check(fallback.usedFallback && fallbackResult?.name == "Recent phone", "alternate private selector handles a failed first request")
     }
 
     private static func assertionTests() {
