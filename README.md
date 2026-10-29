@@ -32,7 +32,7 @@ Caffeine keeps the **computer** awake. The display can still turn off, and macOS
 
 Caffeine does not change your password or locking settings. For more detail, open **Options → Sleep, Lock & Security…**.
 
-Protection pauses for low battery, critical temperature or unavailable required sensors, and resumes when the condition clears. Checks run about every five seconds. Keep the Mac ventilated; do not put it in a bag while it is running. **Diagnostics** provides status and logs if something seems wrong. **Open Performance Logs** contains minute-by-minute system CPU use and macOS thermal state for the last 30 days while the app is running. CPU use is the average since the prior sample; thermal state is a category, not a temperature in degrees. Sleep and app downtime leave gaps.
+Protection pauses for low battery, critical temperature or unavailable required sensors, and resumes when the condition clears. Checks run about every five seconds. Keep the Mac ventilated; do not put it in a bag while it is running. **Diagnostics** provides status and logs if something seems wrong. **Open Performance Logs** contains minute-by-minute system CPU use, CPU temperature (where available) and macOS thermal state for the last 30 days while the app is running. CPU use is the average since the prior sample; CPU temperature is the hottest reported performance/efficiency-core sensor; the separate thermal state is a category. The typical range is the 5th–95th percentile of this Mac’s last 30 days of samples taken with the lid known open and input in the previous five minutes; it needs at least 30 readings over 30 minutes. Readings use private macOS sensor APIs and may be unavailable on some Macs. Sleep and app downtime leave gaps.
 
 ## For Developers
 

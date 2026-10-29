@@ -5,11 +5,41 @@ enum PerformanceLog {
     static let directory = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/Caffeine/performance", isDirectory: true)
     private static let queue = DispatchQueue(label: "caffeine.performance", qos: .utility)
     private static var previous: [UInt32]?
+    private static let lock = NSLock()
+    private static var currentTemperature: Double?
+    private static var temperatureRange: (Double, Double)?
+    private static var lastRangeRefresh = Date.distantPast
+    static func temperatureSummary() -> (Double?, (Double, Double)?) {
+        lock.lock(); defer { lock.unlock() }
+        return (currentTemperature, temperatureRange)
+    }
+    private static func setSummary(current: Double?, range: (Double, Double)?) {
+        lock.lock(); currentTemperature = current; temperatureRange = range; lock.unlock()
+    }
+    static func typicalRange(now: Date, directory dir: URL = directory) -> (Double, Double)? {
+        let cutoff = Int(now.timeIntervalSince1970 - retention)
+        var samples: [(Int, Double)] = []
+        for file in (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [] {
+            guard file.lastPathComponent.hasPrefix("sample-"), file.pathExtension == "csv", let data = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            for row in data.split(separator: "\n") {
+                let fields = row.split(separator: ",", omittingEmptySubsequences: false)
+                if fields.count >= 5, fields[4] == "1", let t = Int(fields[0]), t >= cutoff, t <= Int(now.timeIntervalSince1970), let value = Double(fields[3]), value.isFinite, (0...120).contains(value) { samples.append((t,value)) }
+            }
+        }
+        guard samples.count >= 30, let earliest = samples.map({ $0.0 }).min(), let latest = samples.map({ $0.0 }).max(), latest - earliest >= 1800 else { return nil }
+        let sorted = samples.map { $0.1 }.sorted()
+        return (sorted[(sorted.count - 1) * 5 / 100], sorted[(sorted.count - 1) * 95 / 100])
+    }
     private static let retention: TimeInterval = 30 * 24 * 60 * 60
     static func prime() {
-        queue.async { previous = cpuTicks(); prune(now: Date()) }
+        queue.async {
+            previous = cpuTicks()
+            let now = Date(); prune(now: now)
+            setSummary(current: ChipTemperature.read(), range: typicalRange(now: now))
+            lastRangeRefresh = now
+        }
     }
-    static func sample(thermal: String) {
+    static func sample(thermal: String, activeWithLidOpen: Bool) {
         let captured = Date()
         queue.async {
             let ticks = cpuTicks()
@@ -22,7 +52,9 @@ enum PerformanceLog {
             previous = ticks
             let epoch = Int(captured.timeIntervalSince1970)
             let cpu = percent.map { String(format: "%.1f", $0) } ?? ""
-            let line = "\(epoch),\(cpu),\(thermal)\n"
+            let temperature = ChipTemperature.read()
+            let degrees = temperature.map { String(format: "%.1f", $0) } ?? ""
+            let line = "\(epoch),\(cpu),\(thermal),\(degrees),\(activeWithLidOpen ? 1 : 0)\n"
             let fm = FileManager.default
             do {
                 try fm.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -33,6 +65,10 @@ enum PerformanceLog {
                 try handle.seekToEnd()
                 try handle.write(contentsOf: Data(line.utf8))
                 prune(now: captured)
+                let oldRange = temperatureSummary().1
+                let refresh = captured.timeIntervalSince(lastRangeRefresh) >= (oldRange == nil ? 300 : 900)
+                setSummary(current: temperature, range: refresh ? typicalRange(now: captured) : oldRange)
+                if refresh { lastRangeRefresh = captured }
             } catch { EventLog.write("performance_log_error", ["reason": error.localizedDescription]) }
         }
     }

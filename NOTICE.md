@@ -11,3 +11,5 @@ Primary references for that review:
 - https://chromium.googlesource.com/chromium/src/+/HEAD/LICENSE (BSD-style)
 
 The Caffeine app icon is AI-edited artwork based on the user-supplied coffee cup, with a charcoal background for contrast, stored in Resources/AppIcon.png. make-icon.swift produces its macOS size representations; it embeds no SF Symbol. System-provided symbols are used only in the app interface. README screenshots show the app menus.
+
+CPU temperature monitoring uses undocumented read-only macOS IOHID interfaces; sensor names and availability may change between devices or macOS versions.

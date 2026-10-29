@@ -78,6 +78,14 @@ enum SelfTest {
             check(!fm.fileExists(atPath: old.path), "expired hour removed")
             check(remaining == "\(cutoff),2.0,fair\n", "boundary retains only samples within 30 days")
             check(fm.fileExists(atPath: unrelated.path), "retention leaves unrelated files untouched")
+            let sample = directory.appendingPathComponent("sample-baseline.csv")
+            let origin = Int(now.timeIntervalSince1970) - 3600
+            let good = (0...30).map { "\(origin + $0 * 60),10,nominal,50.0,1" }
+            let bad = (0...50).map { "\(origin + $0 * 60),10,nominal,100.0,0" }
+            try (good + bad).joined(separator: "\n").write(to: sample, atomically: true, encoding: .utf8)
+            let range = PerformanceLog.typicalRange(now: now, directory: directory)
+            check(range?.0 == 50 && range?.1 == 50, "baseline excludes closed or inactive samples")
+
         } catch { check(false, "performance retention test: \(error)") }
     }
 

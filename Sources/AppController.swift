@@ -203,7 +203,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         tickCount += 1
         if tickCount % 12 == 0 {
-            PerformanceLog.sample(thermal: thermal)
+            let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .null)
+            let activeOpen = observedLidClosed == false && idle < 300 && screenLocked != true && screensAsleep != true
+            PerformanceLog.sample(thermal: thermal, activeWithLidOpen: activeOpen)
             if lidClosed { heartbeat() }
         }
         if tickCount % 6 == 0 { refresh() }
@@ -598,7 +600,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             MenuRow(title: "Lock Screen Settings…", kind: .action, action: #selector(openLockScreenSettings)),
             MenuRow(title: "Start at Login", kind: .toggle(LoginItem.isEnabled), action: #selector(toggleLoginItem)),
         ])))
+        let temperatures = PerformanceLog.temperatureSummary()
+        let currentTemperature = temperatures.0.map { String(format: "CPU temperature (1 min): %.0f °C", $0) } ?? "CPU temperature: unavailable"
+        let typicalTemperature = temperatures.1.map { String(format: "Typical CPU, active + lid open: %.0f–%.0f °C", $0.0, $0.1) } ?? "Typical CPU: collecting readings"
         var details: [MenuRow] = [
+            info(currentTemperature),
+            info(typicalTemperature),
             info("Lid \(lidClosed ? "closed" : "open") · sleep \(sleepDisabled ? "blocked" : "normal")"),
         ]
         if let s = snapshot { details.append(info(Describe.displays(s.displays))) }
