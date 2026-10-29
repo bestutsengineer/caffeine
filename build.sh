@@ -7,11 +7,21 @@ APP=build/Caffeine.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-swiftc -O -swift-version 5 -target "$(uname -m)-apple-macos14.0" \
-    -module-cache-path build/module-cache \
-    -import-objc-header Sources/CGVirtualDisplay.h \
-    -framework AppKit -framework IOKit -framework CoreGraphics \
-    Sources/*.swift -o "$APP/Contents/MacOS/Caffeine"
+build_binary() {
+    local arch="$1" destination="$2"
+    swiftc -O -swift-version 5 -target "$arch-apple-macos14.0" \
+        -module-cache-path build/module-cache \
+        -import-objc-header Sources/CGVirtualDisplay.h \
+        -framework AppKit -framework IOKit -framework CoreGraphics \
+        Sources/*.swift -o "$destination"
+}
+if [ "${1:-}" = "--universal" ]; then
+    build_binary arm64 build/Caffeine-arm64
+    build_binary x86_64 build/Caffeine-x86_64
+    lipo -create build/Caffeine-arm64 build/Caffeine-x86_64 -output "$APP/Contents/MacOS/Caffeine"
+else
+    build_binary "$(uname -m)" "$APP/Contents/MacOS/Caffeine"
+fi
 
 cp Info.plist "$APP/Contents/Info.plist"
 REVISION=unknown

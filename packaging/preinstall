@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+# Never stop a running keep-awake process: a closed MacBook could sleep immediately.
+if /usr/bin/pgrep -x Caffeine >/dev/null; then
+    echo 'Caffeine is running. Open the lid, quit Caffeine from its menu, then run this installer again.' >&2
+    exit 1
+fi
+exit 0

@@ -2,7 +2,9 @@
 
 **Keep your Mac awake—even with the lid closed.** Caffeine is a small macOS menu-bar app for long downloads, background tasks and other work that needs to keep running.
 
-Requires **macOS 14 or later**. It lives in the menu bar, with no Dock icon. This repository currently provides source code; see [For Developers](#for-developers) to build and install it.
+Requires **macOS 14 or later**. It lives in the menu bar, with no Dock icon. Download the universal `.pkg` from [Releases](https://github.com/bestutsengineer/caffeine/releases/latest), run the installer, then open **Caffeine** in Applications. Supports Apple silicon and Intel. The package is unsigned and not notarized, so macOS may block it. You can also [build from source](#for-developers).
+
+Before updating, open the lid and quit Caffeine. The installer refuses to proceed while the app is running and installs to `/Applications/Caffeine.app`. If you previously built a copy in your personal Applications folder, remove that older copy after quitting to avoid opening the wrong version.
 
 ## How to use
 
@@ -32,7 +34,7 @@ Protection pauses for low battery, critical temperature or unavailable required 
 
 ### Build and install
 
-Requires Xcode Command Line Tools. Builds target the current Mac's architecture.
+Requires Xcode Command Line Tools. Normal builds target the current Mac's architecture; `./build.sh --universal` builds for Apple silicon and Intel. `./package.sh` builds, runs self-tests and produces `build/Caffeine-<version>-universal.pkg`. The installer does not configure the sleep permission, install the optional prelogin job or launch the app. Distribution packages currently have no Developer ID signature or notarization.
 
 ```sh
 git clone https://github.com/bestutsengineer/caffeine.git
