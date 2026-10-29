@@ -5,19 +5,15 @@ PATH=/usr/bin:/bin:/usr/sbin:/sbin
 CONFIG=/Library/Preferences/local.caffeine.prelogin.plist
 
 if [ "${1:-}" != "--locked" ]; then
-    initial_console=$(stat -f %Su /dev/console)
-    if [ "${1:-}" = "--dry-run" ] && [ -n "${2:-}" ]; then initial_console=$2; fi
-    if [ "$initial_console" != root ]; then
-        [ "${1:-}" = "--dry-run" ] && echo 'Console user present: left to Caffeine'
-        exit 0
-    fi
     USER_PREFS=$(/usr/libexec/PlistBuddy -c 'Print :PreferencesPath' "$CONFIG" 2>/dev/null)
     case "$USER_PREFS" in /*/Library/Preferences/local.caffeine.plist) ;; *) logger -t caffeine-prelogin-guard 'Skipped: preferences path not configured'; exit 0 ;; esac
-    [ -f "$USER_PREFS" ] || { logger -t caffeine-prelogin-guard 'Skipped: preferences unavailable'; exit 0; }
-    USER_ID=$(stat -f %u "$USER_PREFS")
+    BASE=${USER_PREFS%/Library/Preferences/local.caffeine.plist}
+    # A missing preferences file must not strand an override. The configured home
+    # remains available to identify the user and their existing ownership record.
+    if [ -f "$USER_PREFS" ]; then USER_ID=$(stat -f %u "$USER_PREFS");
+    else USER_ID=$(stat -f %u "$BASE") || exit 1; fi
     [ "${USER_ID:-0}" -gt 0 ] 2>/dev/null || { logger -t caffeine-prelogin-guard 'Skipped: invalid preferences owner'; exit 1; }
     USER_NAME=$(id -nu "$USER_ID") || exit 1
-    BASE=${USER_PREFS%/Library/Preferences/local.caffeine.plist}
     DIR="$BASE/Library/Application Support/Caffeine"
     sudo -n -u "$USER_NAME" /bin/mkdir -p "$DIR" || exit 1
     sudo -n -u "$USER_NAME" /usr/bin/touch "$DIR/sleep-override.lock" || exit 1
@@ -31,17 +27,53 @@ DIR=$3
 mode=${4:-}
 console=$(stat -f %Su /dev/console)
 if [ "$mode" = "--dry-run" ] && [ -n "${5:-}" ]; then console=$5; fi
-if [ "$console" != root ]; then
-    [ "$mode" = "--dry-run" ] && echo 'Console user present: left to Caffeine'
-    exit 0
-fi
 boot=$(sysctl -n kern.boottime | awk '{gsub(",", "", $4); print $4}')
 case "$boot" in ''|*[!0-9]*) logger -t caffeine-prelogin-guard 'Skipped: boot identity unavailable'; exit 1 ;; esac
 record="$DIR/sleep-override.owner"
 owned=0
 [ "$(cat "$record" 2>/dev/null)" = "$boot" ] && owned=1
 reason=''
-case "$(/usr/libexec/PlistBuddy -c 'Print :wantAwake' "$USER_PREFS" 2>/dev/null)" in true|1) ;; *) reason='Keep Awake off or preference unavailable' ;; esac
+absence="$DIR/guard-app-absent-since"
+if [ "$console" != root ]; then
+    # A logged-in user's app owns the guards. If it disappears, allow time for
+    # login and launchd recovery before releasing only Caffeine's own override.
+    if [ "$owned" != 1 ]; then
+        [ "$mode" = "--dry-run" ] || rm -f "$absence"
+        [ "$mode" = "--dry-run" ] && echo 'Console user present: left to Caffeine'
+        exit 0
+    fi
+    pgrep -u "$(id -u)" -x Caffeine >/dev/null 2>&1
+    process_status=$?
+    if [ "$process_status" = 0 ]; then
+        [ "$mode" = "--dry-run" ] || rm -f "$absence"
+        [ "$mode" = "--dry-run" ] && echo 'Console user present: left to Caffeine'
+        exit 0
+    fi
+    # An error is not evidence that the app is absent.
+    if [ "$process_status" != 1 ]; then logger -t caffeine-prelogin-guard 'Skipped: app process check failed'; exit 1; fi
+    now=$(date +%s)
+    absent_boot=''; since=''
+    [ ! -f "$absence" ] || read -r absent_boot since < "$absence"
+    case "$now" in ''|*[!0-9]*) logger -t caffeine-prelogin-guard 'Skipped: clock unavailable'; exit 1 ;; esac
+    [ "$absent_boot" = "$boot" ] || since=''
+    case "$since" in ''|*[!0-9]*)
+        [ "$mode" = "--dry-run" ] || printf '%s %s\n' "$boot" "$now" > "$absence"
+        [ "$mode" = "--dry-run" ] && echo 'Console user present: waiting for app recovery'
+        exit 0 ;;
+    esac
+    if [ "$now" -lt "$since" ] || [ $((now - since)) -lt 90 ]; then
+        if [ "$now" -lt "$since" ] && [ "$mode" != "--dry-run" ]; then printf '%s %s\n' "$boot" "$now" > "$absence"; fi
+        [ "$mode" = "--dry-run" ] && echo 'Console user present: waiting for app recovery'
+        exit 0
+    fi
+    reason='Caffeine app absent after recovery period'
+else
+    [ "$mode" = "--dry-run" ] || rm -f "$absence"
+    if [ ! -f "$USER_PREFS" ]; then reason='preferences unavailable';
+    else
+        case "$(/usr/libexec/PlistBuddy -c 'Print :wantAwake' "$USER_PREFS" 2>/dev/null)" in true|1) ;; *) reason='Keep Awake off or preference unavailable' ;; esac
+    fi
+fi
 batt=$(pmset -g batt) || reason=${reason:-'power status unavailable'}
 if ! echo "$batt" | grep -q "'AC Power'"; then
     case "$(/usr/libexec/PlistBuddy -c 'Print :allowOnBattery' "$USER_PREFS" 2>/dev/null)" in true|1|'') ;; *) reason=${reason:-'battery operation not enabled'} ;; esac

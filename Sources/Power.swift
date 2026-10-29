@@ -153,20 +153,31 @@ enum Pmset {
 final class SleepAssertion {
     static let name = "Caffeine: keeping this Mac awake"
     private var id: IOPMAssertionID = 0
+    private let create: (inout IOPMAssertionID) -> IOReturn
+    private let releaseAssertion: (IOPMAssertionID) -> IOReturn
     var isHeld: Bool { id != 0 }
 
-    func hold() {
-        guard id == 0 else { return }
+    init(create: @escaping (inout IOPMAssertionID) -> IOReturn = { id in
+        IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
+                                    IOPMAssertionLevel(kIOPMAssertionLevelOn), SleepAssertion.name as CFString, &id)
+    }, release: @escaping (IOPMAssertionID) -> IOReturn = { IOPMAssertionRelease($0) }) {
+        self.create = create
+        self.releaseAssertion = release
+    }
+
+    /// Returns an error when the assertion could not be acquired; the next tick retries.
+    @discardableResult func hold() -> IOReturn? {
+        guard id == 0 else { return nil }
         var newID: IOPMAssertionID = 0
-        let result = IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
-                                                 IOPMAssertionLevel(kIOPMAssertionLevelOn),
-                                                 Self.name as CFString, &newID)
-        if result == kIOReturnSuccess { id = newID }
+        let result = create(&newID)
+        guard result == kIOReturnSuccess else { return result }
+        id = newID
+        return nil
     }
 
     func release() {
         guard id != 0 else { return }
-        IOPMAssertionRelease(id)
+        _ = releaseAssertion(id)
         id = 0
     }
 }

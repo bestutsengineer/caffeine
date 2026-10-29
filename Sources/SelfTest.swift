@@ -18,6 +18,7 @@ enum SelfTest {
         guardTests()
         thermalSafetyTests()
         sleepOwnershipTests()
+        assertionTests()
         parserTests()
         diagnosticTests()
         virtualDisplayPolicyTests()
@@ -30,6 +31,23 @@ enum SelfTest {
         if live { liveTests() }
         print(failures == 0 ? "\nAll checks passed." : "\n\(failures) check(s) FAILED.")
         return failures == 0 ? 0 : 1
+    }
+
+    private static func assertionTests() {
+        print("== Assertion error handling")
+        var attempts = 0
+        var released: UInt32 = 0
+        let assertion = SleepAssertion(create: { id in
+            attempts += 1
+            if attempts == 1 { return -1 }
+            id = 42
+            return 0
+        }, release: { id in released = id; return 0 })
+        check(assertion.hold() == -1 && !assertion.isHeld, "failed assertion is reported")
+        check(assertion.hold() == nil && assertion.isHeld, "failed assertion is retried")
+        check(assertion.hold() == nil && attempts == 2, "held assertion is not recreated")
+        assertion.release()
+        check(!assertion.isHeld && released == 42, "acquired assertion is released")
     }
 
     private static func timingAndGestureTests() {

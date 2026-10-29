@@ -77,6 +77,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var sleepDisabled = false
     private var decision: GuardDecision = .allow
     private var permissionProblem: String?
+    private var assertionFailure: IOReturn?
     private var thermalPolicy = ThermalStopPolicy()
     private var sleepRetry = SleepRetryPolicy()
     private var sleepRequestProblem: String?
@@ -256,7 +257,17 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let shouldDisableSleep = want && newDecision == .allow
         if shouldDisableSleep != sleepDisabled || (!shouldDisableSleep && SleepOwnership.bootID().map({ SleepOwnership.isOwned(boot: $0) }) == true) { apply(shouldDisableSleep) }
-        if shouldDisableSleep { assertion.hold() } else { assertion.release() }
+        if shouldDisableSleep {
+            let failure = assertion.hold()
+            if failure != assertionFailure {
+                if let failure { log("assertion_failed", ["code": failure]) }
+                else if assertionFailure != nil { log("assertion_restored") }
+                assertionFailure = failure
+            }
+        } else {
+            assertion.release()
+            assertionFailure = nil
+        }
         updateVirtualDisplay()
 
         let recoveryNeeded = Prefs.thermalStopPending || (want && newDecision != .allow)
@@ -615,6 +626,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if problem == "Permission rule not installed" {
                 rows.append(MenuRow(title: "Set Up Permission…", kind: .action, symbol: "key", action: #selector(showPermissionHelp)))
             }
+        }
+        if let failure = assertionFailure {
+            rows.append(warning("Idle-sleep assertion unavailable (\(failure)); retrying"))
         }
 
         let temperatures = PerformanceLog.temperatureSummary()
