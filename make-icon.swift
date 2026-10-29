@@ -11,7 +11,12 @@ for (name, pixels) in [("16x16",16),("16x16@2x",32),("32x32",32),("32x32@2x",64)
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     NSGraphicsContext.current?.imageInterpolation = .high
-    source.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels), from: .zero,
+    // Preserve the supplied artwork's proportions within each square representation.
+    let edge = CGFloat(pixels)
+    let scale = min(edge / source.size.width, edge / source.size.height)
+    let width = source.size.width * scale, height = source.size.height * scale
+    source.draw(in: NSRect(x: (edge - width) / 2, y: (edge - height) / 2,
+                           width: width, height: height), from: .zero,
                 operation: .copy, fraction: 1)
     NSGraphicsContext.restoreGraphicsState()
     try rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: "\(output)/icon_\(name).png"))
