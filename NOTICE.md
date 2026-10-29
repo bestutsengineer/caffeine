@@ -10,4 +10,4 @@ Primary references for that review:
 - https://chromium.googlesource.com/chromium/src/+/HEAD/ui/display/mac/test/virtual_display_util_mac.mm
 - https://chromium.googlesource.com/chromium/src/+/HEAD/LICENSE (BSD-style)
 
-The Caffeine app icon is user-supplied coffee-cup artwork, stored in Resources/AppIcon.png. make-icon.swift produces its macOS size representations; it embeds no SF Symbol. System-provided symbols are used only in the app interface. README screenshots show the app menus.
+The Caffeine app icon is AI-edited artwork based on the user-supplied coffee cup, with a charcoal background for contrast, stored in Resources/AppIcon.png. make-icon.swift produces its macOS size representations; it embeds no SF Symbol. System-provided symbols are used only in the app interface. README screenshots show the app menus.
