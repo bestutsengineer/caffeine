@@ -17,6 +17,7 @@ enum SelfTest {
     static func run(live: Bool, sensors: Bool = false) -> Int32 {
         guardTests()
         thermalSafetyTests()
+        sleepOwnershipTests()
         parserTests()
         diagnosticTests()
         virtualDisplayPolicyTests()
@@ -95,6 +96,29 @@ enum SelfTest {
             check(range?.0 == 50 && range?.1 == 50, "baseline excludes closed or inactive samples")
 
         } catch { check(false, "performance retention test: \(error)") }
+    }
+
+    private static func sleepOwnershipTests() {
+        print("== Sleep override ownership")
+        check(SleepOwnership.decision(want: false, actual: true, owned: false) == .noChange, "off preserves external sleep override")
+        check(SleepOwnership.decision(want: true, actual: true, owned: false) == .keepExternal, "existing override is not claimed")
+        check(SleepOwnership.decision(want: true, actual: false, owned: false) == .acquire, "claim before enabling own override")
+        check(SleepOwnership.decision(want: false, actual: true, owned: true) == .release, "release our override")
+        check(SleepOwnership.decision(want: false, actual: false, owned: true) == .clearRecord, "clear recovered ownership after already restored")
+        check(SleepOwnership.decision(want: false, actual: nil, owned: true) == .unavailable, "never mutate unreadable system state")
+        check(SleepOwnership.decision(want: true, actual: true, owned: true) == .keepOwned, "preserve ownership across process restart")
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("caffeine-owner-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        do {
+            try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+            let marker = temp.appendingPathComponent("owner")
+            try SleepOwnership.claim(boot: "123", record: marker)
+            check(SleepOwnership.isOwned(boot: "123", record: marker), "ownership persists to disk")
+            check(!SleepOwnership.isOwned(boot: "124", record: marker), "ownership never carries across reboot")
+            try SleepOwnership.clear(record: marker)
+            check(!SleepOwnership.isOwned(boot: "123", record: marker), "ownership clears after release")
+        } catch { check(false, "ownership record test: \(error)") }
+
     }
 
     private static func thermalSafetyTests() {

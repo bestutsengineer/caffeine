@@ -169,7 +169,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         // Caffeine only keeps SleepDisabled set while it's running with its guards active.
         let restoreRequested = sleepDisabled
-        if restoreRequested { _ = Pmset.setSleepDisabled(false) }
+        if restoreRequested { lastApply = .distantPast; apply(false) }
         sleepObservation = Pmset.observeSleepDisabled()
         sleepDisabled = sleepObservation?.value ?? sleepDisabled
         log("quit", ["sleepRestoreRequested": restoreRequested,
@@ -255,7 +255,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         let shouldDisableSleep = want && newDecision == .allow
-        if shouldDisableSleep != sleepDisabled { apply(shouldDisableSleep) }
+        if shouldDisableSleep != sleepDisabled || (!shouldDisableSleep && SleepOwnership.bootID().map({ SleepOwnership.isOwned(boot: $0) }) == true) { apply(shouldDisableSleep) }
         if shouldDisableSleep { assertion.hold() } else { assertion.release() }
         updateVirtualDisplay()
 
@@ -284,25 +284,45 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func apply(_ disable: Bool) {
-        // After a failure, retry every 30 s rather than every tick.
         if permissionProblem != nil && Date().timeIntervalSince(lastApply) < 30 { return }
         lastApply = Date()
         let previousProblem = permissionProblem
-        switch Pmset.setSleepDisabled(disable) {
-        case .success:
-            sleepObservation = Pmset.observeSleepDisabled()
-            sleepDisabled = sleepObservation?.value ?? false
-            if sleepDisabled == disable {
-                permissionProblem = nil
-                log(disable ? "sleep_disabled" : "sleep_restored")
-            } else {
-                permissionProblem = "pmset ran but SleepDisabled is still \(sleepDisabled ? 1 : 0)"
+        do {
+            try SleepOwnership.withLock {
+                guard let boot = SleepOwnership.bootID() else { throw NSError(domain: "Caffeine", code: 1, userInfo: [NSLocalizedDescriptionKey: "Cannot identify the current boot"]) }
+                let observed = Pmset.observeSleepDisabled()
+                sleepObservation = observed
+                guard let actual = observed.value else { throw NSError(domain: "Caffeine", code: 2, userInfo: [NSLocalizedDescriptionKey: "Cannot read system sleep setting"]) }
+                sleepDisabled = actual
+                let owned = SleepOwnership.isOwned(boot: boot)
+                switch SleepOwnership.decision(want: disable, actual: actual, owned: owned) {
+                case .keepExternal, .noChange:
+                    // Another actor may own the global setting; don't take credit or reset it.
+                    permissionProblem = !disable && actual ? "Sleep is disabled externally; Caffeine did not change it" : nil
+                case .keepOwned: permissionProblem = nil
+                case .clearRecord:
+                    try SleepOwnership.clear(); permissionProblem = nil
+                case .acquire, .release:
+                    if disable { try SleepOwnership.claim(boot: boot) } // durable before the privileged change
+                    let result = Pmset.setSleepDisabled(disable)
+                    sleepObservation = Pmset.observeSleepDisabled()
+                    sleepDisabled = sleepObservation?.value ?? actual
+                    if sleepObservation?.value == disable {
+                        if !disable { try SleepOwnership.clear() }
+                        permissionProblem = nil
+                        log(disable ? "sleep_disabled" : "sleep_restored")
+                    } else {
+                        if disable && sleepObservation?.value == false { try? SleepOwnership.clear() }
+                        switch result {
+                        case .failure(.needsPermission): permissionProblem = "Permission rule not installed"
+                        case .failure(.failed(let message)): permissionProblem = message
+                        case .success: permissionProblem = "Sleep setting could not be verified"
+                        }
+                    }
+                case .unavailable: permissionProblem = "Cannot read system sleep setting"
+                }
             }
-        case .failure(.needsPermission):
-            permissionProblem = "Permission rule not installed"
-        case .failure(.failed(let message)):
-            permissionProblem = message
-        }
+        } catch { permissionProblem = "Sleep ownership unavailable: \(error.localizedDescription)" }
         if let problem = permissionProblem, problem != previousProblem {
             log("apply_failed", ["reason": problem, "wanted": disable])
         }
@@ -592,7 +612,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                             action: #selector(toggleAwake), key: "k"))
         if let problem = permissionProblem {
             rows.append(warning(problem))
-            rows.append(MenuRow(title: "Set Up Permission…", kind: .action, symbol: "key", action: #selector(showPermissionHelp)))
+            if problem == "Permission rule not installed" {
+                rows.append(MenuRow(title: "Set Up Permission…", kind: .action, symbol: "key", action: #selector(showPermissionHelp)))
+            }
         }
 
         let temperatures = PerformanceLog.temperatureSummary()

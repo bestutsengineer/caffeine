@@ -53,7 +53,7 @@ Installation refuses to replace a running Caffeine. Quit normally with the lid o
 
 ### Power control and recovery
 
-Caffeine holds an idle-sleep assertion and sets `pmset -a disablesleep 1`. This setting also bypasses macOS's low-battery sleep, so battery and thermal guards are essential. Normal Off, Quit, logout and SIGTERM restore sleep; a crash or force kill can leave it disabled until the app restarts.
+Caffeine holds an idle-sleep assertion and, when needed, sets `pmset -a disablesleep 1`. It records overrides it creates and releases only an override recorded for the current boot. An already-enabled external override is left alone. Because the macOS flag has no owner information, changes made by another tool after Caffeine acquires it cannot be distinguished perfectly. This setting also bypasses macOS's low-battery sleep, so battery and thermal guards are essential. Normal Off, Quit, logout and SIGTERM restore sleep; a crash or force kill can leave it disabled until the app restarts.
 
 To restore sleep manually:
 
@@ -81,7 +81,7 @@ Settings: `~/Library/Preferences/local.caffeine.plist`. Status: `~/Library/Appli
 
 The virtual display uses private `CGVirtualDisplay` API. It is removed when the lid opens, a real display becomes available or protection stops. Existing preferences are preserved on upgrade. `--test-virtual-display` briefly creates a real display; debug sensor simulation requires `CAFFEINE_DEBUG=1`.
 
-The optional `prelogin-guard/` job needs a root-owned `/Library/Preferences/local.caffeine.prelogin.plist` with `PreferencesPath` pointing to the chosen user's preferences. It allows AC operation only and restores normal sleep if required data is unavailable. The app cannot run at the FileVault unlock screen.
+The optional `prelogin-guard/` job needs a root-owned `/Library/Preferences/local.caffeine.prelogin.plist` with `PreferencesPath` pointing to the chosen user's preferences. It uses the saved battery preference and cutoff and declines to enable the override when required data or thermal status is unavailable. It restores only its own recorded override. The helper starts after the encrypted system volume is unlocked; neither the helper nor the GUI runs at the FileVault unlock screen. The GUI starts after user login.
 
 ### Contributing and license
 

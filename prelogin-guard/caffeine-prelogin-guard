@@ -1,54 +1,86 @@
 #!/bin/sh
-# Caffeine pre-login guard. launchd runs this as root every 30 s (local.caffeine.prelogin-guard).
-# While nobody is logged in, it keeps the Mac awake (pmset disablesleep 1), but only when Caffeine's
-# Keep Awake is on, the Mac is on AC power above MIN_BATTERY %, and there's no thermal warning.
-# Otherwise it restores normal sleep. Once someone logs in it does nothing: Caffeine owns the
-# setting in the user session (and clears it when it quits, e.g. for a restart).
-# Usage: caffeine-prelogin-guard [--dry-run [console-user]]
+# Runs as root from launchd, then drops to the configured user before touching
+# that user's ownership record or invoking the narrowly-authorized pmset command.
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
-# This root-owned local configuration is created by the operator, never committed.
 CONFIG=/Library/Preferences/local.caffeine.prelogin.plist
-USER_PREFS=$(/usr/libexec/PlistBuddy -c 'Print :PreferencesPath' "$CONFIG" 2>/dev/null)
-# No configured path means unavailable preferences, so the guard restores normal sleep.
-case "$USER_PREFS" in /*/Library/Preferences/local.caffeine.plist) ;; *) USER_PREFS= ;; esac
-MIN_BATTERY=$(/usr/libexec/PlistBuddy -c 'Print :minBatteryPercent' "$USER_PREFS" 2>/dev/null)
-case "$MIN_BATTERY" in ''|*[!0-9]*) MIN_BATTERY=20 ;; esac
-[ "$MIN_BATTERY" -ge 5 ] && [ "$MIN_BATTERY" -le 80 ] || MIN_BATTERY=20
 
-dry_run=0
+if [ "${1:-}" != "--locked" ]; then
+    initial_console=$(stat -f %Su /dev/console)
+    if [ "${1:-}" = "--dry-run" ] && [ -n "${2:-}" ]; then initial_console=$2; fi
+    if [ "$initial_console" != root ]; then
+        [ "${1:-}" = "--dry-run" ] && echo 'Console user present: left to Caffeine'
+        exit 0
+    fi
+    USER_PREFS=$(/usr/libexec/PlistBuddy -c 'Print :PreferencesPath' "$CONFIG" 2>/dev/null)
+    case "$USER_PREFS" in /*/Library/Preferences/local.caffeine.plist) ;; *) logger -t caffeine-prelogin-guard 'Skipped: preferences path not configured'; exit 0 ;; esac
+    [ -f "$USER_PREFS" ] || { logger -t caffeine-prelogin-guard 'Skipped: preferences unavailable'; exit 0; }
+    USER_ID=$(stat -f %u "$USER_PREFS")
+    [ "${USER_ID:-0}" -gt 0 ] 2>/dev/null || { logger -t caffeine-prelogin-guard 'Skipped: invalid preferences owner'; exit 1; }
+    USER_NAME=$(id -nu "$USER_ID") || exit 1
+    BASE=${USER_PREFS%/Library/Preferences/local.caffeine.plist}
+    DIR="$BASE/Library/Application Support/Caffeine"
+    sudo -n -u "$USER_NAME" /bin/mkdir -p "$DIR" || exit 1
+    sudo -n -u "$USER_NAME" /usr/bin/touch "$DIR/sleep-override.lock" || exit 1
+    # Both processes acquire this same BSD flock. lockf and the inner script run as
+    # the user, avoiding root writes or symlink traversal in a user-writable path.
+    exec sudo -n -u "$USER_NAME" /usr/bin/lockf -k -t 2 "$DIR/sleep-override.lock" \
+        /bin/sh "$0" --locked "$USER_PREFS" "$DIR" "${1:-}" "${2:-}"
+fi
+USER_PREFS=$2
+DIR=$3
+mode=${4:-}
 console=$(stat -f %Su /dev/console)
-if [ "${1:-}" = "--dry-run" ]; then
-    dry_run=1
-    [ -n "${2:-}" ] && console=$2
-fi
-
-# Someone is logged in: Caffeine decides.
-if [ "$console" != "root" ]; then
-    [ $dry_run = 1 ] && echo "console user $console: left to Caffeine"
+if [ "$mode" = "--dry-run" ] && [ -n "${5:-}" ]; then console=$5; fi
+if [ "$console" != root ]; then
+    [ "$mode" = "--dry-run" ] && echo 'Console user present: left to Caffeine'
     exit 0
 fi
-
-reason=""
-case "$(/usr/libexec/PlistBuddy -c 'Print :wantAwake' "$USER_PREFS" 2>/dev/null)" in
-    true|1) ;;
-    *) reason="Caffeine is off or preference unavailable" ;;
+boot=$(sysctl -n kern.boottime | awk '{gsub(",", "", $4); print $4}')
+case "$boot" in ''|*[!0-9]*) logger -t caffeine-prelogin-guard 'Skipped: boot identity unavailable'; exit 1 ;; esac
+record="$DIR/sleep-override.owner"
+owned=0
+[ "$(cat "$record" 2>/dev/null)" = "$boot" ] && owned=1
+reason=''
+case "$(/usr/libexec/PlistBuddy -c 'Print :wantAwake' "$USER_PREFS" 2>/dev/null)" in true|1) ;; *) reason='Keep Awake off or preference unavailable' ;; esac
+batt=$(pmset -g batt) || reason=${reason:-'power status unavailable'}
+if ! echo "$batt" | grep -q "'AC Power'"; then
+    case "$(/usr/libexec/PlistBuddy -c 'Print :allowOnBattery' "$USER_PREFS" 2>/dev/null)" in true|1|'') ;; *) reason=${reason:-'battery operation not enabled'} ;; esac
+    pct=$(echo "$batt" | grep -Eo '[0-9]+%' | head -n 1 | tr -d %)
+    cutoff=$(/usr/libexec/PlistBuddy -c 'Print :minBatteryPercent' "$USER_PREFS" 2>/dev/null)
+    case "$cutoff" in ''|*[!0-9]*) cutoff=15 ;; esac
+    [ "$cutoff" -ge 5 ] && [ "$cutoff" -le 80 ] || cutoff=15
+    [ "${pct:-0}" -gt "$cutoff" ] || reason=${reason:-'battery at or below cutoff'}
+fi
+therm=$(pmset -g therm 2>/dev/null) || reason=${reason:-'thermal status unavailable'}
+[ -n "$therm" ] || reason=${reason:-'thermal status unavailable'}
+echo "$therm" | grep -qiE 'warning level set to [1-9]' && reason=${reason:-'thermal warning'}
+current=$(pmset -g | awk '$1 == "SleepDisabled" && ($2 == "0" || $2 == "1") {print $2; exit}')
+case "$current" in 0|1) ;; *) logger -t caffeine-prelogin-guard 'Skipped: sleep setting unreadable'; exit 1 ;; esac
+want=1; [ -n "$reason" ] && want=0
+action=none
+if [ "$want" = 1 ] && [ "$current" = 0 ]; then action=acquire
+elif [ "$want" = 0 ] && [ "$owned" = 1 ]; then
+    if [ "$current" = 1 ]; then action=release; else action=clear; fi
+fi
+if [ "$mode" = "--dry-run" ]; then
+    echo "pre-login desired=$want current=$current owned=$owned action=$action${reason:+ reason=$reason}"
+    exit 0
+fi
+case "$action" in
+ acquire)
+    tmp=$(mktemp "$DIR/.sleep-owner.XXXXXX") || exit 1
+    printf '%s\n' "$boot" > "$tmp" && mv -f "$tmp" "$record" || { rm -f "$tmp"; exit 1; }
+    if sudo -n /usr/bin/pmset -a disablesleep 1; then logger -t caffeine-prelogin-guard 'Acquired sleep override';
+    else
+      after=$(pmset -g | awk '$1 == "SleepDisabled" {print $2; exit}')
+      [ "$after" = 0 ] && rm -f "$record"
+      logger -t caffeine-prelogin-guard 'Failed to acquire sleep override'; exit 1
+    fi ;;
+ release)
+    if sudo -n /usr/bin/pmset -a disablesleep 0; then
+      after=$(pmset -g | awk '$1 == "SleepDisabled" {print $2; exit}')
+      if [ "$after" = 0 ]; then rm -f "$record"; logger -t caffeine-prelogin-guard "Released sleep override: $reason"; else logger -t caffeine-prelogin-guard 'Could not verify restored sleep'; exit 1; fi
+    else logger -t caffeine-prelogin-guard 'Failed to restore normal sleep'; exit 1; fi ;;
+ clear) rm -f "$record" ;;
+ none) logger -t caffeine-prelogin-guard "No change: desired=$want current=$current owned=$owned${reason:+ reason=$reason}" ;;
 esac
-batt=$(pmset -g batt)
-echo "$batt" | grep -q "'AC Power'" || reason=${reason:-"on battery"}
-pct=$(echo "$batt" | grep -Eo '[0-9]+%' | head -n 1 | tr -d %)
-[ "${pct:-0}" -gt "$MIN_BATTERY" ] || reason=${reason:-"battery at ${pct:-?}%"}
-therm=$(pmset -g therm 2>/dev/null) || reason=${reason:-"thermal status unavailable"}
-[ -n "$therm" ] || reason=${reason:-"thermal status unavailable"}
-echo "$therm" | grep -qiE "warning level set to [1-9]" && reason=${reason:-"thermal warning"}
-
-want=1
-[ -n "$reason" ] && want=0
-current=$(pmset -g | awk '$1 == "SleepDisabled" {print $2}')
-if [ $dry_run = 1 ]; then
-    echo "want SleepDisabled=$want (now ${current:-?})${reason:+: $reason}"
-    exit 0
-fi
-if [ "$current" != "$want" ]; then
-    pmset -a disablesleep "$want"
-    logger -t caffeine-prelogin-guard "SleepDisabled ${current:-?} -> $want${reason:+ ($reason)}"
-fi
