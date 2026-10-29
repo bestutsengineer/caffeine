@@ -21,6 +21,7 @@ enum SelfTest {
         virtualDisplayPolicyTests()
         settingsTests()
         timingAndGestureTests()
+        performanceRetentionTests()
         shellTimeoutTest()
         trackerTests()
         if sensors { sensorTests() }
@@ -54,6 +55,30 @@ enum SelfTest {
         check((try? JSONDecoder().decode(KeepAwakeConfiguration.self, from: legacyConfig)) != nil,
               "legacy running-app state decodes before guarded upgrade")
         check(CLI.validSetting("doubleClickToToggle=1") && !CLI.validSetting("doubleClickToToggle=2"), "gesture CLI setting validated")
+    }
+
+    private static func performanceRetentionTests() {
+        print("== Performance retention")
+        let fm = FileManager.default
+        let directory = fm.temporaryDirectory.appendingPathComponent("caffeine-perf-test-" + UUID().uuidString)
+        defer { try? fm.removeItem(at: directory) }
+        do {
+            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            let now = Date(timeIntervalSince1970: 2_000_001_800)
+            let cutoff = Int(now.timeIntervalSince1970) - 30 * 24 * 3600
+            let hour = cutoff / 3600
+            let old = directory.appendingPathComponent("sample-\(hour - 1).csv")
+            let boundary = directory.appendingPathComponent("sample-\(hour).csv")
+            let unrelated = directory.appendingPathComponent("other.csv")
+            try "old".write(to: old, atomically: true, encoding: .utf8)
+            try "\(cutoff - 1),1.0,nominal\n\(cutoff),2.0,fair\n".write(to: boundary, atomically: true, encoding: .utf8)
+            try "leave me".write(to: unrelated, atomically: true, encoding: .utf8)
+            PerformanceLog.prune(now: now, directory: directory)
+            let remaining = try String(contentsOf: boundary, encoding: .utf8)
+            check(!fm.fileExists(atPath: old.path), "expired hour removed")
+            check(remaining == "\(cutoff),2.0,fair\n", "boundary retains only samples within 30 days")
+            check(fm.fileExists(atPath: unrelated.path), "retention leaves unrelated files untouched")
+        } catch { check(false, "performance retention test: \(error)") }
     }
 
     private static func guardTests() {

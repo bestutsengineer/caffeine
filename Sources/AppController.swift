@@ -145,6 +145,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         launch["byLoginItem"] = LoginItem.launchedByAgent
         launch["debug"] = debug
         log("launch", launch)
+        PerformanceLog.prime()
         tick()
         refresh()
         let timer = Timer(timeInterval: 5, target: self, selector: #selector(tick), userInfo: nil, repeats: true)
@@ -201,7 +202,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if lidClosed && lidPausedReason == nil { lidPausedReason = pauseReason }
         }
         tickCount += 1
-        if lidClosed && tickCount % 12 == 0 { heartbeat() }
+        if tickCount % 12 == 0 {
+            PerformanceLog.sample(thermal: thermal)
+            if lidClosed { heartbeat() }
+        }
         if tickCount % 6 == 0 { refresh() }
         updateIcon()
     }
@@ -604,6 +608,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else { details.append(info("No lid test yet")) }
         details += [.separator,
             MenuRow(title: "Open Event Log", kind: .action, action: #selector(openLog)),
+            MenuRow(title: "Open Performance Logs", kind: .action, action: #selector(openPerformanceLog)),
             MenuRow(title: "Copy Diagnostics", kind: .action, action: #selector(copyDiagnostics))]
         rows.append(MenuRow(title: "Diagnostics", kind: .submenu(details)))
         rows.append(.separator)
@@ -805,6 +810,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !NSWorkspace.shared.open(url) {
             NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))
         }
+    }
+
+    @objc private func openPerformanceLog() {
+        try? FileManager.default.createDirectory(at: PerformanceLog.directory, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(PerformanceLog.directory)
     }
 
     @objc private func openLog() {
