@@ -50,6 +50,8 @@ enum SelfTest {
         check(IconClick.action(clickCount: 2, rightButton: false, enabled: true) == .toggle, "double click toggles once")
         check(IconClick.action(clickCount: 3, rightButton: false, enabled: true) == .ignore, "triple click does not toggle twice")
         check(IconClick.action(clickCount: 1, rightButton: true, enabled: true) == .showMenu, "right click opens menu immediately")
+        check(IconClick.action(clickCount: 1, rightButton: false, controlClick: true, enabled: true) == .showMenu, "control-click opens menu immediately")
+        check(IconClick.action(clickCount: 2, rightButton: false, controlClick: true, enabled: true) == .showMenu, "control-double-click never toggles")
         check(IconClick.action(clickCount: 2, rightButton: false, enabled: false) == .showMenu, "disabled gesture only opens menu")
         let legacyConfig = Data(#"{"wantAwake":true,"allowOnBattery":true,"minBatteryPercent":10,"virtualDisplay":true,"startAtLogin":true}"#.utf8)
         check((try? JSONDecoder().decode(KeepAwakeConfiguration.self, from: legacyConfig)) != nil,

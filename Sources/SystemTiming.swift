@@ -86,8 +86,8 @@ enum SystemTimingReader {
 
 enum IconClick {
     enum Action: Equatable { case showMenu, deferMenu, toggle, ignore }
-    static func action(clickCount: Int, rightButton: Bool, enabled: Bool) -> Action {
-        if rightButton || !enabled { return .showMenu }
+    static func action(clickCount: Int, rightButton: Bool, controlClick: Bool = false, enabled: Bool) -> Action {
+        if rightButton || controlClick || !enabled { return .showMenu }
         if clickCount == 1 { return .deferMenu }
         if clickCount == 2 { return .toggle }
         return .ignore

@@ -17,7 +17,7 @@ Requires **macOS 14 or later**. It lives in the menu bar, with no Dock icon. Thi
 3. Check the status before closing the lid. A **filled cup** means Caffeine is keeping your Mac awake; an **outline cup** means it is off. A **warning triangle** means protection is paused—open the menu for the reason.
 4. Turn Keep Awake off, or choose **Quit**, to restore normal sleep.
 
-**Shortcut:** double-click the cup to toggle Keep Awake. Single-click opens the menu below the cup after a short delay; right-click opens it immediately. You can disable double-click toggling in **Options**.
+**Shortcut:** double-click the cup to toggle Keep Awake. Single-click opens the menu below the cup after a short delay; right-click or Control-click opens it immediately. You can disable double-click toggling in **Options**.
 
 ## Useful options
 

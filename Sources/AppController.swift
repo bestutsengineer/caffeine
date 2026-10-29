@@ -628,7 +628,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pendingIconMenu?.cancel()
         iconClickGeneration += 1
         switch IconClick.action(clickCount: event.clickCount, rightButton: event.type == .rightMouseUp,
-                                enabled: Prefs.doubleClickToToggle) {
+                                controlClick: event.modifierFlags.contains(.control), enabled: Prefs.doubleClickToToggle) {
         case .toggle: setWantAwake(!Prefs.wantAwake)
         case .showMenu: showIconMenu()
         case .deferMenu:
@@ -645,7 +645,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func showIconMenu() {
         pendingIconMenu = nil
         guard statusItem.button != nil else { return }
-        // Open directly after the double-click delay, anchored below the status item.
+        // Attach the native status menu only while tracking: this preserves custom double-click handling.
+        // The direct status-item popup works after a deferred single click, without a synthetic click.
+        statusItem.menu = menu
+        defer { statusItem.menu = nil }
         statusItem.popUpMenu(menu)
     }
     @objc private func toggleDoubleClick() {
