@@ -570,7 +570,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             rows.append(MenuRow(title: "Set Up Permission…", kind: .action, symbol: "key", action: #selector(showPermissionHelp)))
         }
 
-        rows.append(info("\(Describe.power(power)) · \(Describe.thermal(thermal))", "battery.100percent"))
+        let temperatures = PerformanceLog.temperatureSummary()
+        let cpuTemperature = temperatures.0.map { String(format: "CPU %.0f °C", $0) } ?? "CPU temp unavailable"
+        rows.append(MenuRow(title: "\(Describe.power(power)) · \(Describe.thermal(thermal)) · \(cpuTemperature)",
+                            kind: .info, symbol: "battery.100percent",
+                            tooltip: "CPU temperature updates about once a minute and uses the hottest available core sensor."))
         if virtualDisplay.isActive {
             let observed = Sensors.displays()
             rows.append(MenuRow(title: "Virtual display: \(observed.virtualActive ? "active" : "idle")", kind: .info, symbol: "display",
@@ -600,11 +604,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             MenuRow(title: "Lock Screen Settings…", kind: .action, action: #selector(openLockScreenSettings)),
             MenuRow(title: "Start at Login", kind: .toggle(LoginItem.isEnabled), action: #selector(toggleLoginItem)),
         ])))
-        let temperatures = PerformanceLog.temperatureSummary()
-        let currentTemperature = temperatures.0.map { String(format: "CPU temperature (1 min): %.0f °C", $0) } ?? "CPU temperature: unavailable"
         let typicalTemperature = temperatures.1.map { String(format: "Typical CPU, active + lid open: %.0f–%.0f °C", $0.0, $0.1) } ?? "Typical CPU: collecting readings"
         var details: [MenuRow] = [
-            info(currentTemperature),
             info(typicalTemperature),
             info("Lid \(lidClosed ? "closed" : "open") · sleep \(sleepDisabled ? "blocked" : "normal")"),
         ]
