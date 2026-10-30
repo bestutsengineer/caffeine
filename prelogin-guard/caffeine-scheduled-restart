@@ -1,0 +1,75 @@
+#!/bin/sh
+# Root-owned daemon; configuration is changed only through authenticated setup.
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+CONFIG=/Library/Preferences/local.caffeine.restart.plist
+STATE=/var/db/local.caffeine
+[ "$(id -u)" = 0 ] || exit 1
+[ -f "$CONFIG" ] || exit 0
+mkdir -p "$STATE" || exit 1
+chmod 700 "$STATE" || exit 1
+if [ "${1:-}" != --locked ]; then
+    exec /usr/bin/lockf -k -t 2 "$STATE/restart.lock" /bin/sh "$0" --locked
+fi
+readkey() { /usr/libexec/PlistBuddy -c "Print :$1" "$CONFIG" 2>/dev/null; }
+boot=$(sysctl -n kern.boottime | awk '{gsub(",", "", $4); print $4}')
+case "$boot" in ''|*[!0-9]*) logger -t caffeine-restart 'Cannot identify boot'; exit 1 ;; esac
+prefs=$(readkey PreferencesPath)
+case "$prefs" in /*/Library/Preferences/local.caffeine.plist) ;; *) logger -t caffeine-restart 'Invalid preferences path'; exit 1 ;; esac
+pending="$STATE/restart-pending"
+if [ -f "$pending" ]; then
+    oldboot=$(cat "$pending" 2>/dev/null)
+    if [ "$oldboot" != "$boot" ]; then
+        [ -f "$prefs" ] && [ ! -L "$prefs" ] || { logger -t caffeine-restart 'Preferences unavailable after restart'; exit 1; }
+        uid=$(stat -f %u "$prefs")
+        [ "${uid:-0}" -gt 0 ] 2>/dev/null || exit 1
+        user=$(id -nu "$uid") || exit 1
+        thermal=$(/usr/libexec/PlistBuddy -c 'Print :thermalStopPending' "$prefs" 2>/dev/null)
+        if [ "$thermal" = true ] || [ "$thermal" = 1 ]; then
+            logger -t caffeine-restart 'Thermal safety prevents automatic re-enable'
+        else
+            # defaults also updates the user's preferences service if login races boot.
+            sudo -n -u "$user" /usr/bin/defaults write "$prefs" wantAwake -bool true 2>/dev/null || \
+              sudo -n -u "$user" /usr/libexec/PlistBuddy -c 'Set :wantAwake true' "$prefs" 2>/dev/null || \
+              sudo -n -u "$user" /usr/libexec/PlistBuddy -c 'Add :wantAwake bool true' "$prefs" || exit 1
+            sudo -n -u "$user" /usr/bin/defaults write "$prefs" idleSleepPending -bool false 2>/dev/null || true
+            logger -t caffeine-restart 'Requested keep-awake after scheduled restart'
+        fi
+        rm -f "$pending" || exit 1
+    fi
+fi
+cancel_wake() {
+    if [ -f "$STATE/wake-time" ]; then
+        old=$(cat "$STATE/wake-time" 2>/dev/null)
+        [ -z "$old" ] || pmset schedule cancel wake "$old" local.caffeine.scheduled-restart >/dev/null 2>&1 || true
+        rm -f "$STATE/wake-time"
+    fi
+}
+if [ "$(readkey Enabled)" != true ]; then cancel_wake; exit 0; fi
+hour=$(readkey Hour); minute=$(readkey Minute); enabled_at=$(readkey EnabledAt)
+case "$hour:$minute:$enabled_at" in *[!0-9:]*|:*|*::*|*:) logger -t caffeine-restart 'Invalid schedule'; exit 1 ;; esac
+[ "$hour" -ge 0 ] && [ "$hour" -le 23 ] && [ "$minute" -ge 0 ] && [ "$minute" -le 59 ] || exit 1
+now=$(date +%s); case "$now" in ''|*[!0-9]*) exit 1 ;; esac
+# Schedule just our next one-time wake; never replace other apps' repeating events.
+today=$(date +%Y-%m-%d)
+target=$(date -j -f '%Y-%m-%d %H:%M:%S' "$today $hour:$minute:00" +%s 2>/dev/null || true)
+case "$target" in ''|*[!0-9]*) logger -t caffeine-restart 'Cannot calculate today’s schedule'; exit 1 ;; esac
+if [ "$target" -le "$now" ]; then
+    tomorrow=$(date -v+1d +%Y-%m-%d)
+    target=$(date -j -f '%Y-%m-%d %H:%M:%S' "$tomorrow $hour:$minute:00" +%s 2>/dev/null || true)
+fi
+case "$target" in ''|*[!0-9]*) logger -t caffeine-restart 'Cannot calculate next wake'; exit 1 ;; esac
+wake=$(date -r "$target" '+%m/%d/%y %H:%M:%S')
+if [ "$(cat "$STATE/wake-time" 2>/dev/null)" != "$wake" ]; then
+    cancel_wake
+    if pmset schedule wake "$wake" local.caffeine.scheduled-restart; then printf '%s\n' "$wake" > "$STATE/wake-time";
+    else logger -t caffeine-restart 'Could not schedule wake'; fi
+fi
+# Never restart immediately as a consequence of saving a schedule.
+[ "$now" -ge "$enabled_at" ] && [ $((now - enabled_at)) -ge 60 ] || exit 0
+[ "$(date +%H)" -eq "$hour" ] && [ "$(date +%M)" -eq "$minute" ] || exit 0
+[ "$(cat "$STATE/last-restart-date" 2>/dev/null)" != "$today" ] || exit 0
+# Mark first, so a failed reboot or a process restart cannot cause a reboot loop.
+printf '%s\n' "$today" > "$STATE/last-restart-date" || exit 1
+printf '%s\n' "$boot" > "$pending" || exit 1
+logger -t caffeine-restart 'Forcing scheduled restart; unsaved work may be lost'
+/sbin/shutdown -r now || logger -t caffeine-restart 'Scheduled restart command failed'

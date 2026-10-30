@@ -39,6 +39,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let virtualDisplay = VirtualDisplay()
     private let hotspot = HotspotMonitor()
     private lazy var hotspotLocation = CLLocationManager()
+    private lazy var capsSwitch = CapsLockSwitch(desired: { (Prefs.wantAwake, Prefs.idleSleepMinutes > 0) },
+                                                  change: { [weak self] in self?.setWantAwake($0) },
+                                                  report: { [weak self] problem in self?.capsProblem = problem })
     private let tracker = LidTracker()
     private var timer: Timer?
     private var activity: NSObjectProtocol?
@@ -81,9 +84,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var decision: GuardDecision = .allow
     private var permissionProblem: String?
     private var assertionFailure: IOReturn?
+    private var capsProblem: String?
     private var thermalPolicy = ThermalStopPolicy()
     private var sleepRetry = SleepRetryPolicy()
     private var sleepRequestProblem: String?
+    private var idleArmedAt = ProcessInfo.processInfo.systemUptime
+    private var lastIdleSleepAttempt: TimeInterval?
     private var unexpectedSleepAt: Date?
     private var lidPausedReason: String?
     private var lastResult = Prefs.lastResult
@@ -113,6 +119,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Prefs.migrateVirtualDisplayPreference()
         if Prefs.autoHotspot { hotspot.start() }
+        if Prefs.capsLockSwitch { capsSwitch.start() }
         // Keep timers on schedule (no App Nap) without holding the system awake by itself.
         activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep,
                                                          reason: "Caffeine watches lid and power state")
@@ -166,6 +173,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         hotspot.stop()
+        if Prefs.capsLockSwitch { capsSwitch.stop() }
         virtualDisplay.destroy()
         assertion.release()
         if handingOff {
@@ -195,6 +203,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         readFastSensors()
         reconcile()
+        enforceInactivitySleep()
         recordTransitions()
         if gap.shouldLog {
             log("scheduling_gap", gap.fields)
@@ -214,13 +223,48 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         tickCount += 1
         if tickCount % 12 == 0 {
-            let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .null)
+            let idle = CaffeineSecondsSinceInput()
             let activeOpen = observedLidClosed == false && idle < 300 && screenLocked != true && screensAsleep != true
             PerformanceLog.sample(thermal: thermal, activeWithLidOpen: activeOpen)
             if lidClosed { heartbeat() }
         }
         if tickCount % 6 == 0 { refresh() }
         updateIcon()
+    }
+
+    private func enforceInactivitySleep() {
+        let minutes = Prefs.idleSleepMinutes
+        let now = ProcessInfo.processInfo.systemUptime
+        let idle = CaffeineSecondsSinceInput()
+        if InactivitySleepPolicy.expired(minutes: minutes, awake: Prefs.wantAwake, idle: idle, armedFor: now - idleArmedAt) {
+            Prefs.wantAwake = false
+            Prefs.idleSleepPending = true
+            Prefs.persistSafetyState()
+            lastApply = .distantPast
+            log("idle_keep_awake_disabled", ["idleMinutes": minutes])
+            reconcile()
+        }
+        guard Prefs.idleSleepPending else { lastIdleSleepAttempt = nil; return }
+        if minutes == 0 || (idle.isFinite && idle >= 0 && idle < Double(minutes * 60)) {
+            Prefs.idleSleepPending = false
+            Prefs.persistSafetyState()
+            lastIdleSleepAttempt = nil
+            log("idle_sleep_cancelled", ["reason": "activity resumed or timer disabled"])
+            return
+        }
+        sleepObservation = Pmset.observeSleepDisabled()
+        if sleepObservation?.value != false { apply(false) }
+        // Recheck activity immediately before sleeping, so a returning user cancels the request.
+        let currentIdle = CaffeineSecondsSinceInput()
+        if InactivitySleepPolicy.shouldRetry(minutes: minutes, pending: Prefs.idleSleepPending, idle: currentIdle,
+                                             normalSleep: sleepObservation?.value, now: now, lastAttempt: lastIdleSleepAttempt) {
+            lastIdleSleepAttempt = now
+            if simulation.isEmpty {
+                let accepted = Pmset.sleepNow()
+                sleepRequestProblem = accepted ? "Idle sleep requested; retrying if needed" : "Idle sleep request failed; retrying"
+                log("idle_sleep_requested", ["accepted": accepted])
+            } else { log("idle_sleep_requested", ["simulated": true]) }
+        }
     }
 
     private func readFastSensors() {
@@ -457,6 +501,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func didWake() {
         let now = Date()
         readFastSensors()
+        if Prefs.idleSleepPending && systemSleepAt != nil {
+            Prefs.idleSleepPending = false
+            Prefs.persistSafetyState()
+            lastIdleSleepAttempt = nil
+            log("idle_sleep_complete")
+        }
         if Prefs.thermalStopPending && systemSleepAt != nil {
             sleepObservation = Pmset.observeSleepDisabled()
             if sleepObservation?.value == false {
@@ -635,6 +685,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let failure = assertionFailure {
             rows.append(warning("Idle-sleep assertion unavailable (\(failure)); retrying"))
         }
+        if let capsProblem { rows.append(warning(capsProblem)) }
 
         let temperatures = PerformanceLog.temperatureSummary()
         let cpuTemperature = temperatures.0.map { String(format: "CPU %.0f °C", $0) } ?? "CPU temp unavailable"
@@ -653,10 +704,25 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         cutoffs.append(.separator)
         cutoffs.append(MenuRow(title: "Custom…", kind: .action, action: #selector(customBatteryCutoff)))
+        var idleChoices = [0, 15, 30, 60, 120].map { minutes in
+            MenuRow(title: minutes == 0 ? "Off" : "\(minutes) minutes", kind: .toggle(Prefs.idleSleepMinutes == minutes),
+                    action: #selector(selectIdleSleep(_:)), value: String(minutes))
+        }
+        idleChoices.append(MenuRow(title: "Custom…", kind: .action, action: #selector(customIdleSleep)))
+        let restart = RestartSchedule.read()
+        let restartChoices: [MenuRow] = [
+            MenuRow(title: "Off", kind: .toggle(!restart.enabled), action: #selector(disableScheduledRestart)),
+            MenuRow(title: "05:00 every day", kind: .toggle(restart.enabled && restart.hour == 5 && restart.minute == 0), action: #selector(defaultScheduledRestart)),
+            MenuRow(title: "Custom Time…", kind: .action, action: #selector(customScheduledRestart))
+        ]
         rows.append(MenuRow(title: "Options", kind: .submenu([
             MenuRow(title: "Allow on Battery (above \(Prefs.minBatteryPercent)%)", kind: .toggle(Prefs.allowOnBattery),
                     action: #selector(toggleAllowOnBattery)),
             MenuRow(title: "Battery Cutoff: \(Prefs.minBatteryPercent)%", kind: .submenu(cutoffs)),
+            MenuRow(title: "Sleep After Inactivity: \(Prefs.idleSleepMinutes == 0 ? "Off" : "\(Prefs.idleSleepMinutes) min")", kind: .submenu(idleChoices),
+                    tooltip: "Turns Keep Awake off and requests sleep after no keyboard or mouse activity."),
+            MenuRow(title: "Daily Forced Restart: \(restart.label)", kind: .submenu(restartChoices),
+                    tooltip: "Forces a restart at the chosen local time, including before login. Unsaved work will be lost."),
             MenuRow(title: "Headless Virtual Display", kind: .submenu([
                 MenuRow(title: "Enabled", kind: .toggle(Prefs.virtualDisplay), action: #selector(toggleVirtualDisplay),
                         tooltip: "Adds a temporary desktop only when no real screen is active. Leave off for ordinary use."),
@@ -671,6 +737,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 MenuRow(title: "How This Works…", kind: .action, action: #selector(showHotspotHelp)),
                 MenuRow(title: "Location Settings…", kind: .action, action: #selector(openHotspotLocationSettings))
             ])),
+            MenuRow(title: "Use Caps Lock as Keep Awake Switch", kind: .toggle(Prefs.capsLockSwitch),
+                    action: #selector(toggleCapsLockSwitch), tooltip: "Caps Lock controls Keep Awake and still affects typing."),
             MenuRow(title: "Double-Click Icon to Toggle Keep Awake", kind: .toggle(Prefs.doubleClickToToggle),
                     action: #selector(toggleDoubleClick), tooltip: "Single-click opens this menu after the double-click interval. Right-click opens it immediately."),
             .separator,
@@ -792,6 +860,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleAwake() { setWantAwake(!Prefs.wantAwake) }
 
+    @objc private func toggleCapsLockSwitch() {
+        if Prefs.capsLockSwitch {
+            Prefs.capsLockSwitch = false; capsSwitch.stop(); writeState(); return
+        }
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "Use Caps Lock as a switch?"
+        alert.informativeText = "Caps Lock will turn Keep Awake on and off and still changes typing and passwords to uppercase. Its light shows Keep Awake and blinks while an inactivity timer is selected. This may not work on every keyboard."
+        alert.addButton(withTitle: "Enable"); alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Prefs.capsLockSwitch = true; capsSwitch.start(); writeState()
+    }
+
     @objc private func toggleAutoHotspot() {
         if Prefs.autoHotspot { Prefs.autoHotspot = false; hotspot.stop(); return }
         NSApp.activate()
@@ -820,6 +901,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         if on { Prefs.thermalStopReason = nil }
+        Prefs.idleSleepPending = false
+        lastIdleSleepAttempt = nil
+        idleArmedAt = ProcessInfo.processInfo.systemUptime
         Prefs.wantAwake = on
         lastApply = .distantPast
         permissionProblem = nil
@@ -828,6 +912,81 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         reconcile()
         updateIcon()
         writeState()
+    }
+
+    @objc private func selectIdleSleep(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String, let minutes = Int(value), (0...1440).contains(minutes) else { return }
+        setIdleSleep(minutes)
+    }
+
+    private func setIdleSleep(_ minutes: Int) {
+        Prefs.idleSleepMinutes = minutes
+        Prefs.idleSleepPending = false
+        lastIdleSleepAttempt = nil
+        idleArmedAt = ProcessInfo.processInfo.systemUptime
+        Prefs.persistSafetyState()
+        log("idle_timer_changed", ["minutes": minutes])
+        writeState()
+    }
+
+    @objc private func disableScheduledRestart() {
+        let current = RestartSchedule.read()
+        guard current.enabled else { return }
+        configureRestart(enabled: false, hour: current.hour, minute: current.minute)
+    }
+
+    @objc private func defaultScheduledRestart() { configureRestart(enabled: true, hour: 5, minute: 0) }
+
+    @objc private func customScheduledRestart() {
+        NSApp.activate()
+        let current = RestartSchedule.read()
+        let alert = NSAlert(); alert.messageText = "Daily forced restart time"
+        alert.informativeText = "Enter a local time in 24-hour format, such as 05:00. The restart forces apps to close and unsaved work will be lost."
+        let field = NSTextField(string: String(format: "%02d:%02d", current.hour, current.minute))
+        field.frame = NSRect(x: 0, y: 0, width: 120, height: 24); alert.accessoryView = field
+        alert.addButton(withTitle: "Continue"); alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard let (hour, minute) = RestartSchedule.parseTime(field.stringValue.trimmingCharacters(in: .whitespaces)) else {
+            showAlert("Enter a time", "Use a 24-hour time, such as 05:00."); return
+        }
+        configureRestart(enabled: true, hour: hour, minute: minute)
+    }
+
+    private func configureRestart(enabled: Bool, hour: Int, minute: Int) {
+        if enabled {
+            guard LoginItem.isEnabled else {
+                showAlert("Enable Start at Login first", "Caffeine needs Start at Login to resume its safety checks after you sign in."); return
+            }
+            NSApp.activate()
+            let alert = NSAlert(); alert.alertStyle = .warning
+            alert.messageText = "Enable daily forced restart?"
+            alert.informativeText = "At \(String(format: "%02d:%02d", hour, minute)) the Mac will force-restart, including at the login screen. Unsaved work and running tasks will be lost. Caffeine will request Keep Awake after reboot when its safety guards permit. Administrator authentication is required."
+            alert.addButton(withTitle: "Enable Forced Restart"); alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+        // Ensure the pre-login helper has a real, user-owned preferences file.
+        Prefs.wantAwake = Prefs.wantAwake
+        Prefs.persistSafetyState()
+        if let error = RestartSchedule.configure(enabled: enabled, hour: hour, minute: minute) {
+            showAlert("Could not update restart schedule", error)
+        } else { log("restart_schedule_changed", ["enabled": enabled, "hour": hour, "minute": minute]) }
+        writeState()
+    }
+
+    @objc private func customIdleSleep() {
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "Sleep after inactivity"
+        alert.informativeText = "Enter 1–1440 minutes without keyboard or mouse activity. Caffeine turns off and requests sleep, even if background work is running."
+        let field = NSTextField(string: Prefs.idleSleepMinutes == 0 ? "60" : String(Prefs.idleSleepMinutes))
+        field.frame = NSRect(x: 0, y: 0, width: 120, height: 24)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard let minutes = Int(field.stringValue.trimmingCharacters(in: .whitespaces)), (1...1440).contains(minutes) else {
+            showAlert("Choose 1–1440 minutes", "Enter a whole number of minutes."); return
+        }
+        setIdleSleep(minutes)
     }
 
     @objc private func toggleVirtualDisplay() {
@@ -889,6 +1048,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setLoginItem(_ on: Bool) {
         guard on != LoginItem.isEnabled else { return }
+        if !on && RestartSchedule.read().enabled {
+            showAlert("Daily restart requires Start at Login", "Turn off Daily Forced Restart before disabling Start at Login, so Caffeine can resume its safety checks after sign-in.")
+            return
+        }
         if on {
             do {
                 try LoginItem.enable()

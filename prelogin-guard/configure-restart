@@ -1,0 +1,60 @@
+#!/bin/sh
+# Run only after administrator authentication. Writes root-owned configuration.
+set -eu
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+[ "$(id -u)" = 0 ] || { echo 'Administrator permission is required.' >&2; exit 1; }
+mode=${1:-}; hour=${2:-}; minute=${3:-}; prefs=${4:-}
+case "$mode" in on|off) ;; *) exit 2 ;; esac
+case "$hour:$minute" in *[!0-9:]*|:*|*:) exit 2 ;; esac
+[ "$hour" -ge 0 ] && [ "$hour" -le 23 ] && [ "$minute" -ge 0 ] && [ "$minute" -le 59 ] || exit 2
+case "$prefs" in /*/Library/Preferences/local.caffeine.plist) ;; *) echo 'Invalid preferences path.' >&2; exit 2 ;; esac
+[ -f "$prefs" ] && [ ! -L "$prefs" ] || { echo 'Caffeine preferences must exist.' >&2; exit 1; }
+uid=$(stat -f %u "$prefs"); [ "$uid" -gt 0 ] || exit 1
+user=$(id -nu "$uid")
+resources=$(cd "$(dirname "$0")" && pwd -P)
+main_config=/Library/Preferences/local.caffeine.prelogin.plist
+restart_config=/Library/Preferences/local.caffeine.restart.plist
+if [ "$mode" = on ]; then
+    sudo -n -u "$user" /usr/bin/sudo -n -l /usr/bin/pmset -a disablesleep 1 >/dev/null 2>&1 || {
+        echo 'Set up Caffeine sleep permission before enabling scheduled restart.' >&2; exit 1;
+    }
+    if [ -f "$main_config" ]; then
+        configured=$(/usr/libexec/PlistBuddy -c 'Print :PreferencesPath' "$main_config" 2>/dev/null || true)
+        [ "$configured" = "$prefs" ] || { echo 'The existing pre-login guard belongs to a different user.' >&2; exit 1; }
+    fi
+    mkdir -p /usr/local/libexec /Library/LaunchDaemons
+    # Install executable scripts atomically so an existing guard is never partially overwritten.
+    for name in caffeine-prelogin-guard caffeine-scheduled-restart; do
+        install -o root -g wheel -m 755 "$resources/$name" "/usr/local/libexec/.$name.new"
+        mv -f "/usr/local/libexec/.$name.new" "/usr/local/libexec/$name"
+    done
+    for name in local.caffeine.prelogin-guard local.caffeine.scheduled-restart; do
+        install -o root -g wheel -m 644 "$resources/$name.plist" "/Library/LaunchDaemons/$name.plist"
+    done
+    if [ ! -f "$main_config" ]; then
+        tmp=$(mktemp /private/tmp/caffeine-prelogin.XXXXXX)
+        trap 'rm -f "$tmp"' EXIT
+        plutil -create xml1 "$tmp"
+        plutil -insert PreferencesPath -string "$prefs" "$tmp"
+        install -o root -g wheel -m 644 "$tmp" "$main_config"
+        rm -f "$tmp"; trap - EXIT
+    fi
+fi
+# Load daemons before committing the new schedule; a failed setup must not
+# leave an enabled schedule behind while reporting failure to the user.
+if [ "$mode" = on ]; then
+    for name in local.caffeine.prelogin-guard local.caffeine.scheduled-restart; do
+        launchctl print "system/$name" >/dev/null 2>&1 || launchctl bootstrap system "/Library/LaunchDaemons/$name.plist"
+    done
+fi
+# The file contains no credential, but only root can change the schedule.
+tmp=$(mktemp /private/tmp/caffeine-restart.XXXXXX)
+trap 'rm -f "$tmp"' EXIT
+plutil -create xml1 "$tmp"
+plutil -insert Enabled -bool "$([ "$mode" = on ] && echo true || echo false)" "$tmp"
+plutil -insert Hour -integer "$hour" "$tmp"
+plutil -insert Minute -integer "$minute" "$tmp"
+plutil -insert EnabledAt -integer "$(date +%s)" "$tmp"
+plutil -insert PreferencesPath -string "$prefs" "$tmp"
+install -o root -g wheel -m 644 "$tmp" /Library/Preferences/.local.caffeine.restart.plist.new
+mv -f /Library/Preferences/.local.caffeine.restart.plist.new "$restart_config"

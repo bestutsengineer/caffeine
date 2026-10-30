@@ -1,5 +1,15 @@
 import Foundation
 
+enum InactivitySleepPolicy {
+    static func expired(minutes: Int, awake: Bool, idle: TimeInterval, armedFor: TimeInterval) -> Bool {
+        minutes > 0 && awake && idle.isFinite && idle >= 0 && armedFor >= 0 && min(idle, armedFor) >= Double(minutes * 60)
+    }
+    static func shouldRetry(minutes: Int, pending: Bool, idle: TimeInterval, normalSleep: Bool?, now: TimeInterval, lastAttempt: TimeInterval?) -> Bool {
+        guard minutes > 0, pending, idle.isFinite, idle >= Double(minutes * 60), normalSleep == false else { return false }
+        return lastAttempt.map { now - $0 >= 30 } ?? true
+    }
+}
+
 struct GuardInput: Equatable {
     var lidClosed: Bool
     var onAC: Bool

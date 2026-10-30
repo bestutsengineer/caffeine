@@ -45,6 +45,9 @@ enum SelfTest {
     static func run(live: Bool, sensors: Bool = false) -> Int32 {
         guardTests()
         thermalSafetyTests()
+        inactivitySleepTests()
+        capsSwitchTests()
+        restartScheduleTests()
         sleepOwnershipTests()
         assertionTests()
         hotspotPolicyTests()
@@ -60,6 +63,40 @@ enum SelfTest {
         if live { liveTests() }
         print(failures == 0 ? "\nAll checks passed." : "\n\(failures) check(s) FAILED.")
         return failures == 0 ? 0 : 1
+    }
+
+    private static func restartScheduleTests() {
+        print("== Scheduled restart")
+        let normal = RestartSchedule.parseTime("05:00")
+        check(normal?.0 == 5 && normal?.1 == 0, "parse 05:00")
+        check(RestartSchedule.parseTime("23:59") != nil, "accept end of day")
+        check(RestartSchedule.parseTime("24:00") == nil && RestartSchedule.parseTime("5:60") == nil, "reject invalid clock times")
+        check(RestartSchedule.parseTime("5:00;reboot") == nil && RestartSchedule.parseTime("5:") == nil, "reject extra input")
+    }
+
+    private static func capsSwitchTests() {
+        print("== Caps Lock switch")
+        check(CapsSwitchPolicy.action(lastDesired: nil, desired: true, lastState: false, actual: false) == .synchronize(true), "enable synchronizes modifier to requested state")
+        check(CapsSwitchPolicy.action(lastDesired: true, desired: true, lastState: true, actual: false) == .userChanged(false), "physical Caps Lock change controls keep-awake")
+        check(CapsSwitchPolicy.action(lastDesired: true, desired: false, lastState: true, actual: true) == .synchronize(false), "safety stop synchronizes Caps Lock")
+        check(CapsSwitchPolicy.light(on: true, timer: false, phase: false), "active light is steady without timer")
+        check(!CapsSwitchPolicy.light(on: true, timer: true, phase: false) && CapsSwitchPolicy.light(on: true, timer: true, phase: true), "timer blinks the light without toggling modifier")
+        check(!CapsSwitchPolicy.light(on: false, timer: true, phase: true), "off state leaves indicator off")
+    }
+
+    private static func inactivitySleepTests() {
+        print("== Inactivity sleep")
+        check(!InactivitySleepPolicy.expired(minutes: 0, awake: true, idle: 10000, armedFor: 10000), "timer off does nothing")
+        check(!InactivitySleepPolicy.expired(minutes: 15, awake: false, idle: 1000, armedFor: 1000), "timer does not turn off an inactive app")
+        check(!InactivitySleepPolicy.expired(minutes: 15, awake: true, idle: 1000, armedFor: 5), "enabling starts a fresh inactivity interval")
+        check(!InactivitySleepPolicy.expired(minutes: 15, awake: true, idle: .nan, armedFor: 1000), "unknown input activity never triggers sleep")
+        check(!InactivitySleepPolicy.expired(minutes: 15, awake: true, idle: 899, armedFor: 1000), "timer waits for the full idle interval")
+        check(InactivitySleepPolicy.expired(minutes: 15, awake: true, idle: 900, armedFor: 900), "timer expires after continuous inactivity")
+        check(!InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 900, normalSleep: nil, now: 1000, lastAttempt: nil), "unverified sleep setting prevents sleep request")
+        check(!InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 1, normalSleep: false, now: 1000, lastAttempt: nil), "returning user cancels sleep request")
+        check(InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 900, normalSleep: false, now: 1000, lastAttempt: nil), "normal sleep restored and idle permits request")
+        check(!InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 900, normalSleep: false, now: 1029, lastAttempt: 1000), "failed sleep request is rate limited")
+        check(InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 900, normalSleep: false, now: 1030, lastAttempt: 1000), "unobserved sleep request can retry")
     }
 
     private static func hotspotPolicyTests() {

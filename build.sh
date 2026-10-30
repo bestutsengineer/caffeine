@@ -11,7 +11,7 @@ build_binary() {
     local arch="$1" destination="$2"
     swiftc -O -swift-version 5 -target "$arch-apple-macos14.0" \
         -module-cache-path build/module-cache \
-        -import-objc-header Sources/CGVirtualDisplay.h \
+        -import-objc-header Sources/Bridging.h \
         -framework AppKit -framework IOKit -framework CoreGraphics -framework CoreWLAN -framework CoreLocation \
         Sources/*.swift -o "$destination"
 }
@@ -24,6 +24,10 @@ else
 fi
 
 cp Info.plist "$APP/Contents/Info.plist"
+mkdir -p "$APP/Contents/Resources/prelogin-guard"
+cp prelogin-guard/caffeine-prelogin-guard prelogin-guard/caffeine-scheduled-restart \
+   prelogin-guard/configure-restart prelogin-guard/local.caffeine.prelogin-guard.plist \
+   prelogin-guard/local.caffeine.scheduled-restart.plist "$APP/Contents/Resources/prelogin-guard/"
 REVISION=unknown
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1 && [ "$(git rev-parse --show-toplevel)" = "$(pwd -P)" ]; then
     REVISION=$(git rev-parse --short=12 HEAD)
