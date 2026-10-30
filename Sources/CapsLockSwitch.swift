@@ -8,7 +8,9 @@ enum CapsSwitchPolicy {
         if let lastState, actual != lastState { return .userChanged(actual) }
         return .none
     }
-    static func light(on: Bool, timer: Bool, phase: Bool) -> Bool { on && (!timer || phase) }
+    static func light(on: Bool, timer: Bool, phase: Bool, markerPulse: Bool = false) -> Bool {
+        on && (timer ? phase : !markerPulse)
+    }
 }
 
 /// Optional physical switch. Only the Caps Lock modifier state is read; no typed keys are captured.
@@ -20,6 +22,7 @@ final class CapsLockSwitch {
     private var lastDesired: Bool?
     private var phase = false
     private var phaseTick = 0
+    private var markerTick = 0
     private var lastLED: Bool?
     private var ledRetryAfter: TimeInterval = 0
     private var lastError: String?
@@ -42,6 +45,7 @@ final class CapsLockSwitch {
         }
         guard let initial = read() else { IOServiceClose(connection); connection = 0; updateError("Caps Lock state unavailable"); return }
         previousState = initial; lastState = initial; lastDesired = nil; lastLED = nil; ledRetryAfter = 0
+        phaseTick = 0; markerTick = 0; phase = false
         poll()
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in self?.poll() }
         RunLoop.main.add(timer, forMode: .common)
@@ -90,7 +94,8 @@ final class CapsLockSwitch {
         let state = desired()
         phaseTick += 1
         if phaseTick >= 4 { phase.toggle(); phaseTick = 0 }
-        let led = CapsSwitchPolicy.light(on: state.on, timer: state.blink, phase: phase)
+        markerTick = (markerTick + 1) % 20
+        let led = CapsSwitchPolicy.light(on: state.on, timer: state.blink, phase: phase, markerPulse: markerTick == 0)
         let now = ProcessInfo.processInfo.systemUptime
         if lastLED != led && now >= ledRetryAfter {
             if setLED(led) { lastLED = led; ledRetryAfter = 0; updateError(nil) }

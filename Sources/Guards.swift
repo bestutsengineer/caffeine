@@ -1,6 +1,9 @@
 import Foundation
 
 enum InactivitySleepPolicy {
+    static func shouldRestart(minutes: Int, pending: Bool, idle: TimeInterval) -> Bool {
+        minutes > 0 && pending && idle.isFinite && idle >= 0 && idle < Double(minutes * 60)
+    }
     static func expired(minutes: Int, awake: Bool, idle: TimeInterval, armedFor: TimeInterval) -> Bool {
         minutes > 0 && awake && idle.isFinite && idle >= 0 && armedFor >= 0 && min(idle, armedFor) >= Double(minutes * 60)
     }

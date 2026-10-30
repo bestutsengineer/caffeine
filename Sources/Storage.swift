@@ -22,7 +22,7 @@ enum Prefs {
         set { defaults.set(newValue, forKey: "idleSleepPending") }
     }
     static var capsLockSwitch: Bool {
-        get { defaults.bool(forKey: "capsLockSwitch") }
+        get { defaults.object(forKey: "capsLockSwitch") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "capsLockSwitch") }
     }
     static var allowOnBattery: Bool {

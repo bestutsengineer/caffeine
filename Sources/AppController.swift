@@ -245,18 +245,33 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             reconcile()
         }
         guard Prefs.idleSleepPending else { lastIdleSleepAttempt = nil; return }
-        if minutes == 0 || (idle.isFinite && idle >= 0 && idle < Double(minutes * 60)) {
+        if InactivitySleepPolicy.shouldRestart(minutes: minutes, pending: true, idle: idle) {
+            // Resume only the session stopped by this timer. Manual Off clears pending.
+            Prefs.idleSleepPending = false
+            setWantAwake(true)
+            Prefs.persistSafetyState()
+            log("idle_timer_restarted", ["minutes": minutes, "resumed": Prefs.wantAwake])
+            return
+        }
+        if minutes == 0 {
             Prefs.idleSleepPending = false
             Prefs.persistSafetyState()
             lastIdleSleepAttempt = nil
             sleepRequestProblem = nil
-            log("idle_sleep_cancelled", ["reason": "activity resumed or timer disabled"])
+            log("idle_sleep_cancelled", ["reason": "timer disabled"])
             return
         }
         sleepObservation = Pmset.observeSleepDisabled()
         if sleepObservation?.value != false { apply(false) }
-        // Recheck activity immediately before sleeping, so a returning user cancels the request.
+        // Activity during the system-setting check also starts a fresh interval.
         let currentIdle = CaffeineSecondsSinceInput()
+        if InactivitySleepPolicy.shouldRestart(minutes: minutes, pending: true, idle: currentIdle) {
+            Prefs.idleSleepPending = false
+            setWantAwake(true)
+            Prefs.persistSafetyState()
+            log("idle_timer_restarted", ["minutes": minutes, "resumed": Prefs.wantAwake])
+            return
+        }
         if InactivitySleepPolicy.shouldRetry(minutes: minutes, pending: Prefs.idleSleepPending, idle: currentIdle,
                                              sleepDisabled: sleepObservation?.value, now: now, lastAttempt: lastIdleSleepAttempt) {
             lastIdleSleepAttempt = now
@@ -869,7 +884,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = "Use Caps Lock as a switch?"
-        alert.informativeText = "Caps Lock will turn Keep Awake on and off and still affects typing and passwords. Its light blinks while an inactivity timer is selected. Remote software can also change Caps Lock and Keep Awake. Some keyboards may not support the light."
+        alert.informativeText = "Caps Lock will turn Keep Awake on and off and still affects typing and passwords. Its light briefly blinks every five seconds, or blinks faster with an inactivity timer. Remote software can also change Caps Lock and Keep Awake. Some keyboards may not support the light."
         alert.addButton(withTitle: "Enable"); alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         Prefs.capsLockSwitch = true; capsSwitch.start(); writeState()
