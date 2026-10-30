@@ -22,7 +22,7 @@ final class HotspotMonitor {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         self.timer = timer
         lock.unlock()
-        timer.schedule(deadline: .now(), repeating: 20, leeway: .seconds(2))
+        timer.schedule(deadline: .now(), repeating: 10, leeway: .seconds(1))
         timer.setEventHandler { [weak self] in self?.check(run: run) }
         timer.resume()
     }

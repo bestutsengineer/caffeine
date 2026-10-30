@@ -17,7 +17,7 @@ struct HotspotRetryPolicy {
     mutating func observe(online: Bool, now: TimeInterval) -> Bool {
         if online { failures = 0; return false }
         failures += 1
-        guard failures >= 3 else { return false }
+        guard failures >= 2 else { return false }
         if let lastAttempt, now - lastAttempt < 300 { return false }
         failures = 0
         lastAttempt = now
