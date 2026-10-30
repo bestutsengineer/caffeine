@@ -9,6 +9,7 @@ final class HotspotMonitor {
     private var generation = 0
     private var policy = HotspotRetryPolicy()
     private var message = "Off"
+    private var previousOnline: Bool?
 
     var status: String { lock.lock(); defer { lock.unlock() }; return message }
 
@@ -21,7 +22,7 @@ final class HotspotMonitor {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         self.timer = timer
         lock.unlock()
-        timer.schedule(deadline: .now(), repeating: 60, leeway: .seconds(5))
+        timer.schedule(deadline: .now(), repeating: 20, leeway: .seconds(2))
         timer.setEventHandler { [weak self] in self?.check(run: run) }
         timer.resume()
     }
@@ -31,7 +32,10 @@ final class HotspotMonitor {
         if let worker, worker.isRunning { worker.terminate() }
         lock.unlock()
         old?.cancel()
-        queue.async { [weak self] in self?.policy.reset() }
+        queue.async { [weak self] in
+            self?.policy.reset()
+            self?.previousOnline = nil
+        }
     }
 
     private func isCurrent(_ run: Int) -> Bool {
@@ -46,6 +50,10 @@ final class HotspotMonitor {
         guard isCurrent(run) else { return }
         let online = Self.internetAvailable()
         guard isCurrent(run) else { return }
+        if previousOnline != online {
+            EventLog.write("hotspot_connectivity_changed", ["online": online])
+            previousOnline = online
+        }
         if online {
             _ = policy.observe(online: true, now: ProcessInfo.processInfo.systemUptime)
             setStatus("Internet available", run: run)
@@ -56,6 +64,7 @@ final class HotspotMonitor {
             return
         }
         setStatus("Trying recent Personal Hotspot", run: run)
+        EventLog.write("hotspot_attempt_started", [:])
         let process = Process()
         guard let executable = Bundle.main.executableURL else { setStatus("Hotspot worker unavailable", run: run); return }
         process.executableURL = executable
@@ -85,6 +94,12 @@ final class HotspotMonitor {
         case 2: setStatus("Wi-Fi off or recent hotspot unavailable", run: run)
         case 3: setStatus("Hotspot connected, but internet unavailable", run: run)
         case 4: setStatus("Internet restored; no switch needed", run: run)
+        case 5: setStatus("Wi-Fi unavailable or off", run: run)
+        case 6: setStatus("No recent Personal Hotspot found", run: run)
+        case 7: setStatus("Personal Hotspot could not be discovered", run: run)
+        case 8: setStatus("Personal Hotspot did not appear in Wi-Fi scan", run: run)
+        case 9: setStatus("Wi-Fi scan failed; check Location access", run: run)
+        case 10: setStatus("Could not join Personal Hotspot", run: run)
         default: setStatus("Could not join hotspot; will retry", run: run)
         }
         EventLog.write("hotspot_attempt_finished", ["result": Int(status)])

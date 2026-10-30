@@ -5,9 +5,13 @@ import Darwin
 /// Runs as a disposable subprocess because the Instant Hotspot API is undocumented.
 enum HotspotWorker {
     static func run(inspect: Bool) -> Int32 {
-        guard let wifi = CWWiFiClient.shared().interface(), wifi.powerOn(), let target = lastHotspot(wifi: wifi) else {
-            if inspect { print("Recent Personal Hotspot profile or Wi-Fi unavailable") }
-            return 2
+        guard let wifi = CWWiFiClient.shared().interface(), wifi.powerOn() else {
+            if inspect { print("Wi-Fi unavailable or off") }
+            return inspect ? 2 : 5
+        }
+        guard let target = lastHotspot(wifi: wifi) else {
+            if inspect { print("Recent Personal Hotspot profile unavailable") }
+            return inspect ? 2 : 6
         }
         if inspect {
             guard dlopen("/System/Library/PrivateFrameworks/Sharing.framework/Sharing", RTLD_NOW) != nil,
@@ -27,21 +31,21 @@ enum HotspotWorker {
         let deadline = Date().addingTimeInterval(22)
         while !completed && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
         discovery.stop()
-        guard let credentials else { return 2 }
+        guard let credentials else { return 7 }
         // Connectivity may have recovered during Bluetooth discovery.
         if HotspotMonitor.internetAvailable() { return 4 }
-        do {
-            // Instant Hotspot may need a moment to start advertising after activation.
-            for attempt in 0..<2 {
-                let networks = try wifi.scanForNetworks(withName: credentials.name)
-                if let network = networks.first(where: { $0.ssid == credentials.name }) {
-                    try wifi.associate(to: network, password: credentials.password)
-                    return 0
-                }
-                if attempt == 0 { Thread.sleep(forTimeInterval: 2) }
+        // Instant Hotspot may need a moment to start advertising after activation.
+        for attempt in 0..<2 {
+            let networks: Set<CWNetwork>
+            do { networks = try wifi.scanForNetworks(withName: credentials.name) }
+            catch { return 9 }
+            if let network = networks.first(where: { $0.ssid == credentials.name }) {
+                do { try wifi.associate(to: network, password: credentials.password); return 0 }
+                catch { return 10 }
             }
-        } catch { return 1 }
-        return 1
+            if attempt == 0 { Thread.sleep(forTimeInterval: 2) }
+        }
+        return 8
     }
 
     /// These profile properties are not public API and may disappear after an OS update.
