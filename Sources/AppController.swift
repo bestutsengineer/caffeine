@@ -89,6 +89,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var sleepRetry = SleepRetryPolicy()
     private var sleepRequestProblem: String?
     private var idleArmedAt = ProcessInfo.processInfo.systemUptime
+    private var idlePowerGate = InactivityPowerGate()
     private var lastIdleSleepAttempt: TimeInterval?
     private var unexpectedSleepAt: Date?
     private var lidPausedReason: String?
@@ -235,6 +236,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func enforceInactivitySleep() {
         let minutes = Prefs.idleSleepMinutes
         let now = ProcessInfo.processInfo.systemUptime
+        let gate = idlePowerGate.update(batteryOnly: Prefs.idleOnBatteryOnly, sourceKnown: power.sourceKnown, onAC: power.onAC)
+        if gate.changed { idleArmedAt = now }
+        if !gate.eligible {
+            pauseInactivityForPower(minutes: minutes)
+            return
+        }
         let idle = CaffeineSecondsSinceInput()
         if InactivitySleepPolicy.expired(minutes: minutes, awake: Prefs.wantAwake, idle: idle, armedFor: now - idleArmedAt) {
             Prefs.wantAwake = false
@@ -263,6 +270,17 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         sleepObservation = Pmset.observeSleepDisabled()
         if sleepObservation?.value != false { apply(false) }
+        // Power may have been connected while the sleep setting was being restored.
+        if Prefs.idleOnBatteryOnly {
+            let latest = simulation.isEmpty ? Sensors.power() : power
+            if !InactivitySleepPolicy.powerEligible(batteryOnly: true, sourceKnown: latest.sourceKnown, onAC: latest.onAC) {
+                power = latest
+                _ = idlePowerGate.update(batteryOnly: true, sourceKnown: latest.sourceKnown, onAC: latest.onAC)
+                idleArmedAt = ProcessInfo.processInfo.systemUptime
+                pauseInactivityForPower(minutes: minutes)
+                return
+            }
+        }
         // Activity during the system-setting check also starts a fresh interval.
         let currentIdle = CaffeineSecondsSinceInput()
         if InactivitySleepPolicy.shouldRestart(minutes: minutes, pending: true, idle: currentIdle) {
@@ -281,6 +299,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 log("idle_sleep_requested", ["accepted": accepted])
             } else { log("idle_sleep_requested", ["simulated": true]) }
         }
+    }
+
+    private func pauseInactivityForPower(minutes: Int) {
+        guard Prefs.idleSleepPending else { return }
+        Prefs.idleSleepPending = false
+        lastIdleSleepAttempt = nil
+        sleepRequestProblem = nil
+        if minutes > 0 { setWantAwake(true) }
+        Prefs.persistSafetyState()
+        log("idle_timer_paused_for_power", ["resumed": Prefs.wantAwake])
     }
 
     private func readFastSensors() {
@@ -726,13 +754,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     action: #selector(selectIdleSleep(_:)), value: String(minutes))
         }
         idleChoices.append(MenuRow(title: "Custom…", kind: .action, action: #selector(customIdleSleep)))
+        idleChoices.append(.separator)
+        idleChoices.append(MenuRow(title: "On Battery Only", kind: .toggle(Prefs.idleOnBatteryOnly), action: #selector(toggleIdleBatteryOnly),
+                                   tooltip: "Pause the inactivity timer on power and start a fresh interval when unplugged."))
         let restart = RestartSchedule.read()
         let restartChoices: [MenuRow] = [
             MenuRow(title: "Off", kind: .toggle(!restart.enabled), action: #selector(disableScheduledRestart)),
             MenuRow(title: "05:00 every day", kind: .toggle(restart.enabled && restart.hour == 5 && restart.minute == 0), action: #selector(defaultScheduledRestart)),
             MenuRow(title: "Custom Time…", kind: .action, action: #selector(customScheduledRestart))
         ]
-        rows.append(MenuRow(title: "Sleep After Inactivity: \(Prefs.idleSleepMinutes == 0 ? "Off" : "\(Prefs.idleSleepMinutes) min")", kind: .submenu(idleChoices), tooltip: "Turns Caffeine off and requests sleep after no keyboard or mouse activity."))
+        let idleLabel = Prefs.idleSleepMinutes == 0 ? "Off" : "\(Prefs.idleSleepMinutes) min"
+        let idlePowerNote = Prefs.idleSleepMinutes > 0 && Prefs.idleOnBatteryOnly && power.sourceKnown == true && power.onAC ? " · paused on power" : ""
+        rows.append(MenuRow(title: "Sleep After Inactivity: \(idleLabel)\(idlePowerNote)", kind: .submenu(idleChoices), tooltip: "Turns Caffeine off and requests sleep after no keyboard or mouse activity."))
         rows.append(MenuRow(title: "Other Options", kind: .submenu([
             MenuRow(title: "Allow on Battery (above \(Prefs.minBatteryPercent)%)", kind: .toggle(Prefs.allowOnBattery),
                     action: #selector(toggleAllowOnBattery)),
@@ -944,6 +977,21 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         idleArmedAt = ProcessInfo.processInfo.systemUptime
         Prefs.persistSafetyState()
         log("idle_timer_changed", ["minutes": minutes])
+        writeState()
+    }
+
+    @objc private func toggleIdleBatteryOnly() {
+        Prefs.idleOnBatteryOnly.toggle()
+        idlePowerGate.reset()
+        idleArmedAt = ProcessInfo.processInfo.systemUptime
+        if Prefs.idleSleepPending && Prefs.idleSleepMinutes > 0 {
+            Prefs.idleSleepPending = false
+            setWantAwake(true)
+        }
+        Prefs.persistSafetyState()
+        readFastSensors()
+        enforceInactivitySleep()
+        log("idle_battery_only_changed", ["enabled": Prefs.idleOnBatteryOnly])
         writeState()
     }
 

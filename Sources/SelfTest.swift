@@ -94,6 +94,17 @@ enum SelfTest {
 
     private static func inactivitySleepTests() {
         print("== Inactivity sleep")
+        var gate = InactivityPowerGate()
+        let plugged = gate.update(batteryOnly: true, sourceKnown: true, onAC: true)
+        check(!plugged.eligible && plugged.changed, "battery-only timer is paused on power")
+        let unplugged = gate.update(batteryOnly: true, sourceKnown: true, onAC: false)
+        check(unplugged.eligible && unplugged.changed, "unplugging starts a fresh interval")
+        check(!InactivitySleepPolicy.expired(minutes: 15, awake: true, idle: 10000, armedFor: 0), "pre-existing idle time does not shorten a freshly unplugged interval")
+        check(!gate.update(batteryOnly: true, sourceKnown: true, onAC: false).changed, "remaining on battery does not reset the interval")
+        let replugged = gate.update(batteryOnly: true, sourceKnown: true, onAC: true)
+        check(!replugged.eligible && replugged.changed, "connecting power suspends a pending timer")
+        check(!gate.update(batteryOnly: true, sourceKnown: false, onAC: false).eligible, "unknown power source cannot trigger battery-only sleep")
+        check(gate.update(batteryOnly: false, sourceKnown: true, onAC: true).eligible, "ordinary timer remains available on power")
         check(!InactivitySleepPolicy.expired(minutes: 0, awake: true, idle: 10000, armedFor: 10000), "timer off does nothing")
         check(!InactivitySleepPolicy.expired(minutes: 15, awake: false, idle: 1000, armedFor: 1000), "timer does not turn off an inactive app")
         check(!InactivitySleepPolicy.expired(minutes: 15, awake: true, idle: 1000, armedFor: 5), "enabling starts a fresh inactivity interval")

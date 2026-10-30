@@ -1,6 +1,20 @@
 import Foundation
 
+struct InactivityPowerGate {
+    private var previous: Bool?
+    mutating func update(batteryOnly: Bool, sourceKnown: Bool?, onAC: Bool) -> (eligible: Bool, changed: Bool) {
+        let eligible = InactivitySleepPolicy.powerEligible(batteryOnly: batteryOnly, sourceKnown: sourceKnown, onAC: onAC)
+        let changed = previous != eligible
+        previous = eligible
+        return (eligible, changed)
+    }
+    mutating func reset() { previous = nil }
+}
+
 enum InactivitySleepPolicy {
+    static func powerEligible(batteryOnly: Bool, sourceKnown: Bool?, onAC: Bool) -> Bool {
+        !batteryOnly || (sourceKnown == true && !onAC)
+    }
     static func shouldRestart(minutes: Int, pending: Bool, idle: TimeInterval) -> Bool {
         minutes > 0 && pending && idle.isFinite && idle >= 0 && idle < Double(minutes * 60)
     }

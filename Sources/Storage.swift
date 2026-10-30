@@ -21,6 +21,10 @@ enum Prefs {
         get { defaults.bool(forKey: "idleSleepPending") }
         set { defaults.set(newValue, forKey: "idleSleepPending") }
     }
+    static var idleOnBatteryOnly: Bool {
+        get { defaults.bool(forKey: "idleOnBatteryOnly") }
+        set { defaults.set(newValue, forKey: "idleOnBatteryOnly") }
+    }
     static var capsLockSwitch: Bool {
         get { defaults.object(forKey: "capsLockSwitch") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "capsLockSwitch") }
