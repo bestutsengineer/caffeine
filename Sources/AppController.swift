@@ -755,6 +755,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         idleChoices.append(MenuRow(title: "Custom…", kind: .action, action: #selector(customIdleSleep)))
         idleChoices.append(.separator)
+        idleChoices.append(MenuRow(title: "Remember Duration", kind: .toggle(Prefs.rememberIdleDuration), action: #selector(toggleRememberIdleDuration),
+                                   tooltip: "When off, the selected duration resets to Off the next time Caffeine starts."))
         idleChoices.append(MenuRow(title: "On Battery Only", kind: .toggle(Prefs.idleOnBatteryOnly), action: #selector(toggleIdleBatteryOnly),
                                    tooltip: "Pause the inactivity timer on power and start a fresh interval when unplugged."))
         let restart = RestartSchedule.read()
@@ -977,6 +979,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         idleArmedAt = ProcessInfo.processInfo.systemUptime
         Prefs.persistSafetyState()
         log("idle_timer_changed", ["minutes": minutes])
+        writeState()
+    }
+
+    @objc private func toggleRememberIdleDuration() {
+        Prefs.rememberIdleDuration.toggle()
+        Prefs.persistSafetyState()
+        log("idle_duration_memory_changed", ["enabled": Prefs.rememberIdleDuration])
         writeState()
     }
 

@@ -1,8 +1,32 @@
 import Foundation
 import CryptoKit
 
+final class IdleDurationStore {
+    private let defaults: UserDefaults
+    private var sessionMinutes = 0
+    init(defaults: UserDefaults) { self.defaults = defaults }
+    var remember: Bool {
+        get { defaults.object(forKey: "rememberIdleDuration") as? Bool ?? true }
+        set {
+            let current = minutes
+            defaults.set(newValue, forKey: "rememberIdleDuration")
+            if newValue { defaults.set(current, forKey: "idleSleepMinutes") }
+            else { sessionMinutes = current; defaults.removeObject(forKey: "idleSleepMinutes") }
+        }
+    }
+    var minutes: Int {
+        get { max(0, min(1440, remember ? defaults.integer(forKey: "idleSleepMinutes") : sessionMinutes)) }
+        set {
+            let value = max(0, min(1440, newValue))
+            if remember { defaults.set(value, forKey: "idleSleepMinutes") }
+            else { sessionMinutes = value; defaults.removeObject(forKey: "idleSleepMinutes") }
+        }
+    }
+}
+
 enum Prefs {
     private static let defaults = UserDefaults.standard
+    private static let idleDuration = IdleDurationStore(defaults: defaults)
 
     static var wantAwake: Bool {
         get { defaults.bool(forKey: "wantAwake") }
@@ -14,8 +38,12 @@ enum Prefs {
     }
     /// Zero disables the inactivity timer.
     static var idleSleepMinutes: Int {
-        get { max(0, min(1440, defaults.integer(forKey: "idleSleepMinutes"))) }
-        set { defaults.set(max(0, min(1440, newValue)), forKey: "idleSleepMinutes") }
+        get { idleDuration.minutes }
+        set { idleDuration.minutes = newValue }
+    }
+    static var rememberIdleDuration: Bool {
+        get { idleDuration.remember }
+        set { idleDuration.remember = newValue }
     }
     static var idleSleepPending: Bool {
         get { defaults.bool(forKey: "idleSleepPending") }

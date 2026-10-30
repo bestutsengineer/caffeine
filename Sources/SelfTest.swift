@@ -94,6 +94,20 @@ enum SelfTest {
 
     private static func inactivitySleepTests() {
         print("== Inactivity sleep")
+        let suite = "local.caffeine.selftest.idle.\(UUID().uuidString)"
+        if let defaults = UserDefaults(suiteName: suite) {
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let first = IdleDurationStore(defaults: defaults)
+            check(first.remember && first.minutes == 0, "duration is remembered by default")
+            first.minutes = 30
+            check(IdleDurationStore(defaults: defaults).minutes == 30, "remembered duration survives a new session")
+            first.remember = false
+            check(first.minutes == 30 && IdleDurationStore(defaults: defaults).minutes == 0, "disabling memory keeps this session but resets the next")
+            first.minutes = 15
+            check(IdleDurationStore(defaults: defaults).minutes == 0, "session duration is not persisted")
+            first.remember = true
+            check(IdleDurationStore(defaults: defaults).minutes == 15, "re-enabling memory saves the current selection")
+        } else { check(false, "isolated preferences are available") }
         var gate = InactivityPowerGate()
         let plugged = gate.update(batteryOnly: true, sourceKnown: true, onAC: true)
         check(!plugged.eligible && plugged.changed, "battery-only timer is paused on power")
