@@ -869,7 +869,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = "Use Caps Lock as a switch?"
-        alert.informativeText = "Caps Lock will turn Keep Awake on and off and still changes typing and passwords to uppercase. Its light shows Keep Awake and blinks while an inactivity timer is selected. This may not work on every keyboard."
+        alert.informativeText = "Caps Lock will turn Keep Awake on and off and still affects typing and passwords. Its light blinks while an inactivity timer is selected. Remote software can also change Caps Lock and Keep Awake. Some keyboards may not support the light."
         alert.addButton(withTitle: "Enable"); alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         Prefs.capsLockSwitch = true; capsSwitch.start(); writeState()
@@ -964,7 +964,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.activate()
             let alert = NSAlert(); alert.alertStyle = .warning
             alert.messageText = "Enable daily forced restart?"
-            alert.informativeText = "At \(String(format: "%02d:%02d", hour, minute)) the Mac will force-restart, including at the login screen. Unsaved work and running tasks will be lost. Caffeine will request Keep Awake after reboot when its safety guards permit. Administrator authentication is required."
+            alert.informativeText = "At \(String(format: "%02d:%02d", hour, minute)) the Mac will force-restart, including at the login screen. Unsaved work and running tasks will be lost. The schedule continues even if Caffeine is quit; turn it off before uninstalling. Caffeine will request Keep Awake after reboot when its safety guards permit. Administrator authentication is required."
             alert.addButton(withTitle: "Enable Forced Restart"); alert.addButton(withTitle: "Cancel")
             guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
