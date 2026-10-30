@@ -4,29 +4,29 @@
 
 The name and purpose are inspired by Caffeinate.
 
-<img src="docs/images/menu.png" alt="Caffeine menu showing Keep Awake enabled, battery status, Options and Diagnostics" width="540">
+<img src="docs/images/menu.png" alt="Caffeine menu showing Caffeine enabled, battery status, options and diagnostics" width="540">
 
-<img src="docs/images/options.png" alt="Caffeine Options with battery cutoff, virtual display, double-click gesture and sleep and lock settings" width="540">
+<img src="docs/images/options.png" alt="Caffeine Other Options with battery cutoff, virtual display, double-click gesture and sleep and lock settings" width="540">
 
-*Screenshots show a custom 10% cutoff. New installations default to 15%.*
+*Screenshots show an earlier menu and a custom 10% cutoff. New installations default to 15%.*
 
 Requires **macOS 14 or later**. It lives in the menu bar, with no Dock icon. This repository provides source code; see [For Developers](#for-developers) to build and install it. No downloadable installer is currently published.
 
 ## How to use
 
 1. Open **Caffeine** from Applications and click the cup in the menu bar.
-2. Turn on **Keep Awake with Lid Closed**. If **Set Up Permission…** appears, open it, copy the setup command, then paste it into Terminal and enter your administrator password. This is a one-time setup.
+2. Turn on **Caffeine**. If **Set Up Permission…** appears, open it, copy the setup command, then paste it into Terminal and enter your administrator password. This is a one-time setup.
 3. Check the status before closing the lid. A **filled cup** means Caffeine is keeping your Mac awake; an **outline cup** means it is off. A **warning triangle** means protection is paused—open the menu for the reason.
-4. Turn Keep Awake off, or choose **Quit**, to restore normal sleep.
+4. Turn Caffeine off, or choose **Quit**, to restore normal sleep.
 
-**Shortcut:** double-click the cup to toggle Keep Awake. Single-click opens the menu below the cup after a short delay; right-click or Control-click opens it immediately. You can disable double-click toggling in **Options**.
+Click the cup to open the menu. Double-click toggling is off by default and can be enabled in **Other Options**; when enabled, single-click opens the menu after a short delay.
 
 ## Useful options
 
 - **Allow on Battery:** on by default for new installations; your saved choice is preserved on upgrade. Turn it off to pause protection when you close the lid without a charger. **Battery Cutoff** pauses protection at your chosen percentage; the default is 15%, adjustable from 5–80%.
-- **Sleep After Inactivity:** off by default. Choose a period with no keyboard or mouse activity; Caffeine then turns off and requests sleep, even if background work is running. Keyboard or mouse activity restarts the full countdown. If sleep is pending, activity resumes Keep Awake and starts a fresh interval, subject to thermal safeguards. The timer runs while the Caffeine app is open.
-- **Use Caps Lock as Keep Awake Switch:** on by default; an explicitly saved choice is preserved. Caps Lock becomes a dedicated Keep Awake switch without capitalising text or passwords. Your original Caps Lock mapping is restored when you disable the option or quit. Its light briefly blinks off every five seconds while Keep Awake is selected and blinks faster when an inactivity timer is enabled; some keyboards may not support light control. Caffeine reserves an unused F16–F20 shortcut internally and preserves unrelated key mappings. If it crashes without being relaunched, open Caffeine again to restore the saved mapping; restarting macOS also clears the temporary mapping. Inspired by [Capsomnia](https://github.com/fuji-mak/Capsomnia).
-- **Daily Forced Restart:** off by default. Choose 05:00 or another local time. This forcibly restarts the Mac, closing apps and losing unsaved work. It works at the login screen and requests Keep Awake after reboot, subject to the battery and thermal guards. Enable Start at Login first; setting or disabling the schedule requires administrator authentication. The schedule remains active when Caffeine quits, so turn it off before uninstalling. Caffeine schedules its own wake event, but a Mac that is powered off or unable to wake may miss the restart. FileVault must be unlocked before Caffeine's helper can run.
+- **Sleep After Inactivity:** off by default. Choose a period with no keyboard or mouse activity; Caffeine then turns off and requests sleep, even if background work is running. Keyboard or mouse activity restarts the full countdown. If sleep is pending, activity resumes Caffeine and starts a fresh interval, subject to thermal safeguards. The timer runs while the Caffeine app is open.
+- **Use Caps Lock as Caffeine Switch:** on by default; an explicitly saved choice is preserved. Caps Lock becomes a dedicated Caffeine switch without capitalising text or passwords. Your original Caps Lock mapping is restored when you disable the option or quit. Its light briefly blinks off every five seconds while Caffeine is selected and blinks faster when an inactivity timer is enabled; some keyboards may not support light control. Caffeine reserves an unused F16–F20 shortcut internally and preserves unrelated key mappings. If it crashes without being relaunched, open Caffeine again to restore the saved mapping; restarting macOS also clears the temporary mapping. Inspired by [Capsomnia](https://github.com/fuji-mak/Capsomnia).
+- **Daily Forced Restart:** off by default. Choose 05:00 or another local time. This forcibly restarts the Mac, closing apps and losing unsaved work. It works at the login screen and requests Caffeine after reboot, subject to the battery and thermal guards. Enable Start at Login first; setting or disabling the schedule requires administrator authentication. The schedule remains active when Caffeine quits, so turn it off before uninstalling. Caffeine schedules its own wake event, but a Mac that is powered off or unable to wake may miss the restart. FileVault must be unlocked before Caffeine's helper can run.
 - **Start at Login:** opens Caffeine when you sign in and helps it recover after a crash.
 - **Diagnostics → macOS Sleep & Lock:** shows your configured sleep, display and password delays. These are settings, not live countdowns. **Diagnostics → Lock Screen Settings…** opens the corresponding system settings.
 - **Headless Virtual Display:** leave this off for ordinary use. Enable it only if a screen-sharing or capture app needs a desktop while the lid is closed and no external monitor is connected. It is experimental and may move windows when the temporary display appears or disappears.
@@ -38,7 +38,7 @@ Caffeine keeps the **computer** awake. The display can still turn off, and macOS
 
 Caffeine does not change your password or locking settings. For more detail, open **Diagnostics → Sleep, Lock & Security…**.
 
-Low battery or unavailable required sensors pause protection until the condition clears. Critical thermal pressure turns Keep Awake off and leaves it off until you turn it back on. If the lid is closed, Caffeine restores normal sleep and retries its sleep request every 30 seconds until it observes sleep and wake or the lid opens. In Options, **Turn Off for Sustained Serious Heat** optionally also turns it off after 60 seconds of serious thermal pressure; it is off by default. Checks run about every five seconds. Thermal protection depends on macOS reporting the state, the app running, and permission to restore sleep. Keep the Mac ventilated; do not put it in a bag while it is running. **Diagnostics** provides status and logs if something seems wrong. **Open Performance Logs** contains minute-by-minute system CPU use, CPU temperature (where available) and macOS thermal state for the last 30 days while the app is running. CPU use is the average since the prior sample; CPU temperature is the hottest reported performance/efficiency-core sensor; the separate thermal state is a category. The typical range is the 5th–95th percentile of this Mac’s last 30 days of samples taken with the lid known open and input in the previous five minutes; it needs at least 30 readings over 30 minutes. Readings use private macOS sensor APIs and may be unavailable on some Macs. Sleep and app downtime leave gaps.
+Low battery or unavailable sensors pause Caffeine. Critical thermal pressure turns it off; you can also enable a sustained serious-heat cutoff in **Other Options**. Keep the Mac ventilated and never put it in a bag while running. **Diagnostics** shows temperature, sleep and lock settings, and logs.
 
 ## For Developers
 
@@ -68,6 +68,10 @@ sudo pmset -a disablesleep 0
 ```
 
 The one-time setup grants only the two sleep-toggle commands through `/etc/sudoers.d/caffeine`. Print the setup command with `Caffeine --permission-command`; revoke it with `sudo rm /etc/sudoers.d/caffeine`. `--handoff` is reserved for guarded updates with a verified replacement and bounded rollback.
+
+### Temperature and performance logs
+
+Diagnostics samples system CPU use, thermal state and available CPU sensors approximately once per minute, retaining 30 days while the app runs. The typical temperature range uses the 5th–95th percentile of active, lid-open samples and requires at least 30 readings over 30 minutes. Private sensor APIs may be unavailable; sleep and downtime leave gaps.
 
 ### CLI and local files
 

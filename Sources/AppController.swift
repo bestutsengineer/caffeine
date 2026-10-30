@@ -669,7 +669,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateIcon() {
         let name = !Prefs.wantAwake ? "cup.and.saucer" : (isActive ? "cup.and.saucer.fill" : "exclamationmark.triangle.fill")
-        statusItem.button?.toolTip = "Caffeine: " + headline + (Prefs.doubleClickToToggle ? "\nDouble-click to toggle Keep Awake; single-click for menu." : "\nClick for menu.")
+        statusItem.button?.toolTip = "Caffeine: " + headline + (Prefs.doubleClickToToggle ? "\nDouble-click to toggle Caffeine; single-click for menu." : "\nClick for menu.")
         guard name != currentIcon else { return }
         currentIcon = name
         let image = NSImage(systemSymbolName: name, accessibilityDescription: "Caffeine")
@@ -691,7 +691,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var rows: [MenuRow] = []
         let headSymbol = !Prefs.wantAwake ? "moon.zzz" : (isActive ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
         rows.append(MenuRow(title: headline, kind: .headline, symbol: headSymbol))
-        rows.append(MenuRow(title: "Keep Awake with Lid Closed", kind: .toggle(Prefs.wantAwake),
+        rows.append(MenuRow(title: "Caffeine", kind: .toggle(Prefs.wantAwake),
                             action: #selector(toggleAwake), key: "k"))
         if let problem = permissionProblem {
             rows.append(warning(problem))
@@ -732,12 +732,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             MenuRow(title: "05:00 every day", kind: .toggle(restart.enabled && restart.hour == 5 && restart.minute == 0), action: #selector(defaultScheduledRestart)),
             MenuRow(title: "Custom Time…", kind: .action, action: #selector(customScheduledRestart))
         ]
-        rows.append(MenuRow(title: "Options", kind: .submenu([
+        rows.append(MenuRow(title: "Sleep After Inactivity: \(Prefs.idleSleepMinutes == 0 ? "Off" : "\(Prefs.idleSleepMinutes) min")", kind: .submenu(idleChoices), tooltip: "Turns Caffeine off and requests sleep after no keyboard or mouse activity."))
+        rows.append(MenuRow(title: "Other Options", kind: .submenu([
             MenuRow(title: "Allow on Battery (above \(Prefs.minBatteryPercent)%)", kind: .toggle(Prefs.allowOnBattery),
                     action: #selector(toggleAllowOnBattery)),
             MenuRow(title: "Battery Cutoff: \(Prefs.minBatteryPercent)%", kind: .submenu(cutoffs)),
-            MenuRow(title: "Sleep After Inactivity: \(Prefs.idleSleepMinutes == 0 ? "Off" : "\(Prefs.idleSleepMinutes) min")", kind: .submenu(idleChoices),
-                    tooltip: "Turns Keep Awake off and requests sleep after no keyboard or mouse activity."),
             MenuRow(title: "Daily Forced Restart: \(restart.label)", kind: .submenu(restartChoices),
                     tooltip: "Forces a restart at the chosen local time, including before login. Unsaved work will be lost."),
             MenuRow(title: "Headless Virtual Display", kind: .submenu([
@@ -747,16 +746,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ])),
             MenuRow(title: "Turn Off for Sustained Serious Heat", kind: .toggle(Prefs.stopOnSeriousThermal),
                     action: #selector(toggleSeriousThermal),
-                    tooltip: "Turns Keep Awake off after 60 seconds of serious thermal pressure. Critical pressure always turns it off."),
+                    tooltip: "Turns Caffeine off after 60 seconds of serious thermal pressure. Critical pressure always turns it off."),
             MenuRow(title: "Personal Hotspot Fallback", kind: .submenu([
                 MenuRow(title: "Connect Automatically When Offline", kind: .toggle(Prefs.autoHotspot), action: #selector(toggleAutoHotspot)),
                 info("Status: \(hotspot.status)"),
                 MenuRow(title: "How This Works…", kind: .action, action: #selector(showHotspotHelp)),
                 MenuRow(title: "Location Settings…", kind: .action, action: #selector(openHotspotLocationSettings))
             ])),
-            MenuRow(title: "Use Caps Lock as Keep Awake Switch", kind: .toggle(Prefs.capsLockSwitch),
-                    action: #selector(toggleCapsLockSwitch), tooltip: "Caps Lock controls Keep Awake without capitalising text."),
-            MenuRow(title: "Double-Click Icon to Toggle Keep Awake", kind: .toggle(Prefs.doubleClickToToggle),
+            MenuRow(title: "Use Caps Lock as Caffeine Switch", kind: .toggle(Prefs.capsLockSwitch),
+                    action: #selector(toggleCapsLockSwitch), tooltip: "Caps Lock controls Caffeine without capitalising text."),
+            MenuRow(title: "Double-Click Icon to Toggle Caffeine", kind: .toggle(Prefs.doubleClickToToggle),
                     action: #selector(toggleDoubleClick), tooltip: "Single-click opens this menu after the double-click interval. Right-click opens it immediately."),
             .separator,
             MenuRow(title: "Start at Login", kind: .toggle(LoginItem.isEnabled), action: #selector(toggleLoginItem)),
@@ -884,7 +883,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = "Use Caps Lock as a switch?"
-        alert.informativeText = "Caps Lock becomes a dedicated Keep Awake switch and will not capitalise text or passwords. Its light briefly blinks every five seconds, or blinks faster with an inactivity timer. Your original Caps Lock mapping returns when you disable this option or quit."
+        alert.informativeText = "Caps Lock becomes a dedicated Caffeine switch and will not capitalise text or passwords. Its light briefly blinks every five seconds, or blinks faster with an inactivity timer. Your original Caps Lock mapping returns when you disable this option or quit."
         alert.addButton(withTitle: "Enable"); alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         Prefs.capsLockSwitch = true; capsSwitch.start(); writeState()
@@ -979,7 +978,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.activate()
             let alert = NSAlert(); alert.alertStyle = .warning
             alert.messageText = "Enable daily forced restart?"
-            alert.informativeText = "At \(String(format: "%02d:%02d", hour, minute)) the Mac will force-restart, including at the login screen. Unsaved work and running tasks will be lost. The schedule continues even if Caffeine is quit; turn it off before uninstalling. Caffeine will request Keep Awake after reboot when its safety guards permit. Administrator authentication is required."
+            alert.informativeText = "At \(String(format: "%02d:%02d", hour, minute)) the Mac will force-restart, including at the login screen. Unsaved work and running tasks will be lost. The schedule continues even if Caffeine is quit; turn it off before uninstalling. Caffeine will request Caffeine after reboot when its safety guards permit. Administrator authentication is required."
             alert.addButton(withTitle: "Enable Forced Restart"); alert.addButton(withTitle: "Cancel")
             guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
@@ -1045,7 +1044,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = "Battery cutoff"
-        alert.informativeText = "Pause Keep Awake at or below this battery percentage (5–80). A low cutoff leaves less reserve."
+        alert.informativeText = "Pause Caffeine at or below this battery percentage (5–80). A low cutoff leaves less reserve."
         let field = NSTextField(string: String(Prefs.minBatteryPercent))
         field.frame = NSRect(x: 0, y: 0, width: 120, height: 24)
         alert.accessoryView = field

@@ -44,7 +44,7 @@ enum Prefs {
     }
     static func persistSafetyState() { defaults.synchronize() }
     static var doubleClickToToggle: Bool {
-        get { defaults.object(forKey: "doubleClickToToggle") as? Bool ?? true }
+        get { defaults.object(forKey: "doubleClickToToggle") as? Bool ?? false }
         set { defaults.set(newValue, forKey: "doubleClickToToggle") }
     }
     static var virtualDisplay: Bool {
