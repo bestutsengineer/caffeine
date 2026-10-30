@@ -755,7 +755,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 MenuRow(title: "Location Settings…", kind: .action, action: #selector(openHotspotLocationSettings))
             ])),
             MenuRow(title: "Use Caps Lock as Keep Awake Switch", kind: .toggle(Prefs.capsLockSwitch),
-                    action: #selector(toggleCapsLockSwitch), tooltip: "Caps Lock controls Keep Awake and still affects typing."),
+                    action: #selector(toggleCapsLockSwitch), tooltip: "Caps Lock controls Keep Awake without capitalising text."),
             MenuRow(title: "Double-Click Icon to Toggle Keep Awake", kind: .toggle(Prefs.doubleClickToToggle),
                     action: #selector(toggleDoubleClick), tooltip: "Single-click opens this menu after the double-click interval. Right-click opens it immediately."),
             .separator,
@@ -884,7 +884,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = "Use Caps Lock as a switch?"
-        alert.informativeText = "Caps Lock will turn Keep Awake on and off and still affects typing and passwords. Its light briefly blinks every five seconds, or blinks faster with an inactivity timer. Remote software can also change Caps Lock and Keep Awake. Some keyboards may not support the light."
+        alert.informativeText = "Caps Lock becomes a dedicated Keep Awake switch and will not capitalise text or passwords. Its light briefly blinks every five seconds, or blinks faster with an inactivity timer. Your original Caps Lock mapping returns when you disable this option or quit."
         alert.addButton(withTitle: "Enable"); alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         Prefs.capsLockSwitch = true; capsSwitch.start(); writeState()

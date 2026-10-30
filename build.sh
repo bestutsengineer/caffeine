@@ -12,7 +12,7 @@ build_binary() {
     swiftc -O -swift-version 5 -target "$arch-apple-macos14.0" \
         -module-cache-path build/module-cache \
         -import-objc-header Sources/Bridging.h \
-        -framework AppKit -framework IOKit -framework CoreGraphics -framework CoreWLAN -framework CoreLocation \
+        -framework AppKit -framework IOKit -framework CoreGraphics -framework CoreWLAN -framework CoreLocation -framework Carbon \
         Sources/*.swift -o "$destination"
 }
 if [ "${1:-}" = "--universal" ]; then

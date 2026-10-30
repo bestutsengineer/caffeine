@@ -76,9 +76,15 @@ enum SelfTest {
 
     private static func capsSwitchTests() {
         print("== Caps Lock switch")
-        check(CapsSwitchPolicy.action(lastDesired: nil, desired: true, lastState: false, actual: false) == .synchronize(true), "enable synchronizes modifier to requested state")
-        check(CapsSwitchPolicy.action(lastDesired: true, desired: true, lastState: true, actual: false) == .userChanged(false), "physical Caps Lock change controls keep-awake")
-        check(CapsSwitchPolicy.action(lastDesired: true, desired: false, lastState: true, actual: true) == .synchronize(false), "safety stop synchronizes Caps Lock")
+        let src = CapsMappingPolicy.sourceKey, dst = CapsMappingPolicy.destinationKey
+        let other: [String: UInt64] = [src: 0x700000004, dst: 0x700000005]
+        let original: [String: UInt64] = [src: CapsMappingPolicy.caps, dst: 0x700000029]
+        let replacement: [String: UInt64] = [src: CapsMappingPolicy.caps, dst: 0x70000006f]
+        let mapped = CapsMappingPolicy.replacingCaps(in: [other, original], with: [replacement])
+        check(mapped == [other, replacement], "Caps-only remapping preserves unrelated keyboard mappings")
+        check(CapsMappingPolicy.replacingCaps(in: mapped, with: [original]) == [other, original], "disabling restores the original Caps mapping")
+        check(CapsMappingPolicy.owns(mapped, destination: 0x70000006f), "mapping ownership is verified")
+        check(!CapsMappingPolicy.owns([original], destination: 0x70000006f), "external Caps mapping is not claimed")
         check(CapsSwitchPolicy.light(on: true, timer: false, phase: false), "active light is on between marker pulses")
         check(!CapsSwitchPolicy.light(on: true, timer: false, phase: false, markerPulse: true), "five-second marker briefly turns the light off")
         check(CapsSwitchPolicy.light(on: true, timer: true, phase: true, markerPulse: true), "timer blinking takes priority over five-second marker")
