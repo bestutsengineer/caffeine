@@ -249,6 +249,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Prefs.idleSleepPending = false
             Prefs.persistSafetyState()
             lastIdleSleepAttempt = nil
+            sleepRequestProblem = nil
             log("idle_sleep_cancelled", ["reason": "activity resumed or timer disabled"])
             return
         }
@@ -257,7 +258,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Recheck activity immediately before sleeping, so a returning user cancels the request.
         let currentIdle = CaffeineSecondsSinceInput()
         if InactivitySleepPolicy.shouldRetry(minutes: minutes, pending: Prefs.idleSleepPending, idle: currentIdle,
-                                             normalSleep: sleepObservation?.value, now: now, lastAttempt: lastIdleSleepAttempt) {
+                                             sleepDisabled: sleepObservation?.value, now: now, lastAttempt: lastIdleSleepAttempt) {
             lastIdleSleepAttempt = now
             if simulation.isEmpty {
                 let accepted = Pmset.sleepNow()
@@ -340,7 +341,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     log("sleep_now", ["reason": reason, "accepted": accepted, "retrySeconds": 30])
                 } else { log("sleep_now", ["reason": reason, "simulated": true]) }
             }
-        } else { sleepRetry.reset(); sleepRequestProblem = nil }
+        } else { sleepRetry.reset(); if !Prefs.idleSleepPending { sleepRequestProblem = nil } }
     }
 
     private func apply(_ disable: Bool) {
@@ -505,6 +506,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Prefs.idleSleepPending = false
             Prefs.persistSafetyState()
             lastIdleSleepAttempt = nil
+            sleepRequestProblem = nil
             log("idle_sleep_complete")
         }
         if Prefs.thermalStopPending && systemSleepAt != nil {
@@ -903,6 +905,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if on { Prefs.thermalStopReason = nil }
         Prefs.idleSleepPending = false
         lastIdleSleepAttempt = nil
+        sleepRequestProblem = nil
         idleArmedAt = ProcessInfo.processInfo.systemUptime
         Prefs.wantAwake = on
         lastApply = .distantPast
@@ -923,6 +926,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Prefs.idleSleepMinutes = minutes
         Prefs.idleSleepPending = false
         lastIdleSleepAttempt = nil
+        sleepRequestProblem = nil
         idleArmedAt = ProcessInfo.processInfo.systemUptime
         Prefs.persistSafetyState()
         log("idle_timer_changed", ["minutes": minutes])

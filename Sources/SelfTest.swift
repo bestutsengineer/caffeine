@@ -92,11 +92,11 @@ enum SelfTest {
         check(!InactivitySleepPolicy.expired(minutes: 15, awake: true, idle: .nan, armedFor: 1000), "unknown input activity never triggers sleep")
         check(!InactivitySleepPolicy.expired(minutes: 15, awake: true, idle: 899, armedFor: 1000), "timer waits for the full idle interval")
         check(InactivitySleepPolicy.expired(minutes: 15, awake: true, idle: 900, armedFor: 900), "timer expires after continuous inactivity")
-        check(!InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 900, normalSleep: nil, now: 1000, lastAttempt: nil), "unverified sleep setting prevents sleep request")
-        check(!InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 1, normalSleep: false, now: 1000, lastAttempt: nil), "returning user cancels sleep request")
-        check(InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 900, normalSleep: false, now: 1000, lastAttempt: nil), "normal sleep restored and idle permits request")
-        check(!InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 900, normalSleep: false, now: 1029, lastAttempt: 1000), "failed sleep request is rate limited")
-        check(InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 900, normalSleep: false, now: 1030, lastAttempt: 1000), "unobserved sleep request can retry")
+        check(!InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 900, sleepDisabled: nil, now: 1000, lastAttempt: nil), "unverified sleep setting prevents sleep request")
+        check(!InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 1, sleepDisabled: false, now: 1000, lastAttempt: nil), "returning user cancels sleep request")
+        check(InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 900, sleepDisabled: false, now: 1000, lastAttempt: nil), "normal sleep restored and idle permits request")
+        check(!InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 900, sleepDisabled: false, now: 1029, lastAttempt: 1000), "failed sleep request is rate limited")
+        check(InactivitySleepPolicy.shouldRetry(minutes: 15, pending: true, idle: 900, sleepDisabled: false, now: 1030, lastAttempt: 1000), "unobserved sleep request can retry")
     }
 
     private static func hotspotPolicyTests() {
