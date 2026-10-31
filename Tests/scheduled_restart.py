@@ -61,7 +61,7 @@ esac
     assert (root/'shutdowns').read_text() == '-r now\n', 'must not restart twice in a day'
     (root/'boot').write_text('101')
     run()
-    assert 'wantAwake -bool true' in (root/'preference_writes').read_text()
+    assert (root/'preference_writes').read_text() == '', 'restart must preserve saved Caffeine state'
     assert not (state/'restart-pending').exists()
     (state/'restart-pending').write_text('100\n'); (root/'thermal').write_text('true'); (root/'preference_writes').write_text('')
     run()
@@ -74,4 +74,4 @@ esac
     (state/'last-restart-date').unlink(missing_ok=True)
     run()
     assert (root/'shutdowns').read_text() == '-r now\n', 'saving a schedule must not cause an immediate reboot'
-    print('PASS forced restart timing, one-per-day, wake ownership, re-enable and thermal safety')
+    print('PASS forced restart timing, one-per-day, wake ownership and preserved Caffeine state')

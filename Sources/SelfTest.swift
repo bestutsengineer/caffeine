@@ -302,7 +302,10 @@ enum SelfTest {
             let marker = temp.appendingPathComponent("owner")
             try SleepOwnership.claim(boot: "123", record: marker)
             check(SleepOwnership.isOwned(boot: "123", record: marker), "ownership persists to disk")
-            check(!SleepOwnership.isOwned(boot: "124", record: marker), "ownership never carries across reboot")
+            check(SleepOwnership.isOwned(boot: "124", record: marker), "prior boot ownership carries across reboot")
+            check(!SleepOwnership.isOwned(boot: "122", record: marker), "future ownership record is rejected")
+            try "invalid".write(to: marker, atomically: true, encoding: .utf8)
+            check(!SleepOwnership.isOwned(boot: "124", record: marker), "invalid ownership record is rejected")
             try SleepOwnership.clear(record: marker)
             check(!SleepOwnership.isOwned(boot: "123", record: marker), "ownership clears after release")
         } catch { check(false, "ownership record test: \(error)") }

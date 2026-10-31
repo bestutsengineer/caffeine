@@ -19,21 +19,9 @@ pending="$STATE/restart-pending"
 if [ -f "$pending" ]; then
     oldboot=$(cat "$pending" 2>/dev/null)
     if [ "$oldboot" != "$boot" ]; then
-        [ -f "$prefs" ] && [ ! -L "$prefs" ] || { logger -t caffeine-restart 'Preferences unavailable after restart'; exit 1; }
-        uid=$(stat -f %u "$prefs")
-        [ "${uid:-0}" -gt 0 ] 2>/dev/null || exit 1
-        user=$(id -nu "$uid") || exit 1
-        thermal=$(/usr/libexec/PlistBuddy -c 'Print :thermalStopPending' "$prefs" 2>/dev/null)
-        if [ "$thermal" = true ] || [ "$thermal" = 1 ]; then
-            logger -t caffeine-restart 'Thermal safety prevents automatic re-enable'
-        else
-            # defaults also updates the user's preferences service if login races boot.
-            sudo -n -u "$user" /usr/bin/defaults write "$prefs" wantAwake -bool true 2>/dev/null || \
-              sudo -n -u "$user" /usr/libexec/PlistBuddy -c 'Set :wantAwake true' "$prefs" 2>/dev/null || \
-              sudo -n -u "$user" /usr/libexec/PlistBuddy -c 'Add :wantAwake bool true' "$prefs" || exit 1
-            sudo -n -u "$user" /usr/bin/defaults write "$prefs" idleSleepPending -bool false 2>/dev/null || true
-            logger -t caffeine-restart 'Requested keep-awake after scheduled restart'
-        fi
+        # Preserve the saved Caffeine and thermal state. The pre-login guard
+        # independently applies that state after restart, subject to its guards.
+        logger -t caffeine-restart 'Restart completed; preserving saved Caffeine state'
         rm -f "$pending" || exit 1
     fi
 fi

@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-/// SleepDisabled is a shared global bit. Only undo a change recorded in this boot.
+/// SleepDisabled is a shared global bit. Retain a valid ownership record across reboot.
 enum SleepOwnership {
     enum Decision: Equatable { case acquire, keepOwned, keepExternal, release, clearRecord, noChange, unavailable }
     static func decision(want: Bool, actual: Bool?, owned: Bool) -> Decision {
@@ -31,7 +31,10 @@ enum SleepOwnership {
         return try work()
     }
     static func isOwned(boot: String, record path: URL = record) -> Bool {
-        (try? String(contentsOf: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) == boot
+        guard let current = Int64(boot), current > 0,
+              let text = try? String(contentsOf: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+              let recorded = Int64(text), recorded > 0 else { return false }
+        return recorded <= current
     }
     static func claim(boot: String, record path: URL = record) throws {
         try (boot + "\n").write(to: path, atomically: true, encoding: .utf8)

@@ -31,7 +31,10 @@ boot=$(sysctl -n kern.boottime | awk '{gsub(",", "", $4); print $4}')
 case "$boot" in ''|*[!0-9]*) logger -t caffeine-prelogin-guard 'Skipped: boot identity unavailable'; exit 1 ;; esac
 record="$DIR/sleep-override.owner"
 owned=0
-[ "$(cat "$record" 2>/dev/null)" = "$boot" ] && owned=1
+recorded=$(cat "$record" 2>/dev/null)
+case "$recorded" in ''|*[!0-9]*) ;; *)
+    [ "$recorded" -gt 0 ] 2>/dev/null && [ "$recorded" -le "$boot" ] 2>/dev/null && owned=1 ;;
+esac
 reason=''
 absence="$DIR/guard-app-absent-since"
 if [ "$console" != root ]; then

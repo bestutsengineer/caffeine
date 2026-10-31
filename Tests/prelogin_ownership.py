@@ -33,12 +33,15 @@ printf '%s\\n' "$5" >> "$TEST_DIR/writes"
   else: absence.write_text(f'{absent_boot} {since}\n')
   owner=d/'sleep-override.owner'
   if owner.exists():owner.unlink()
-  if owned:owner.write_text('123456\n')
+  if owned:owner.write_text((str(owned) if isinstance(owned, int) and not isinstance(owned, bool) else '123456')+'\n')
   x=subprocess.run(['/bin/sh',str(script),'--locked',str(prefs),str(d),'',''],env=env,text=True,capture_output=True)
   assert x.returncode==expected_exit,(x.stderr,x.stdout)
   return (root/'flag').read_text(),owner.exists(),(root/'writes').read_text()
  assert run(False,1,False)==('1',False,'')
  assert run(False,1,True)==('0',False,'0\n')
+ assert run(False,1,123455)==('0',False,'0\n'), 'prior boot ownership must be recoverable'
+ assert run(True,1,123455)==('1',True,''), 'saved on state must remain awake after reboot'
+ assert run(False,1,123457)==('1',True,''), 'future ownership record must be ignored'
  assert run(False,0,True)==('0',False,'')
  assert run(True,1,False)==('1',False,'')
  assert run(True,0,False)==('1',True,'1\n')

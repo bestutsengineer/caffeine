@@ -1036,7 +1036,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.activate()
             let alert = NSAlert(); alert.alertStyle = .warning
             alert.messageText = "Enable daily forced restart?"
-            alert.informativeText = "At \(String(format: "%02d:%02d", hour, minute)) the Mac will force-restart, including at the login screen. Unsaved work and running tasks will be lost. The schedule continues even if Caffeine is quit; turn it off before uninstalling. Caffeine will request Caffeine after reboot when its safety guards permit. Administrator authentication is required."
+            alert.informativeText = "At \(String(format: "%02d:%02d", hour, minute)) the Mac will force-restart, including at the login screen. Unsaved work and running tasks will be lost. The schedule continues even if Caffeine is quit; turn it off before uninstalling. Caffeine keeps your saved on/off choice after reboot, subject to its safety guards. Administrator authentication is required."
             alert.addButton(withTitle: "Enable Forced Restart"); alert.addButton(withTitle: "Cancel")
             guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
