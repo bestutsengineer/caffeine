@@ -8,6 +8,8 @@ final class HotspotMonitor {
     private var worker: Process?
     private var generation = 0
     private var policy = HotspotRetryPolicy()
+    private var probeTiming = HotspotProbeTiming()
+    private var lastOfflineStatus: String?
     private var message = "Off"
     private var previousOnline: Bool?
 
@@ -37,6 +39,8 @@ final class HotspotMonitor {
         old?.cancel()
         queue.async { [weak self] in
             self?.policy.reset()
+            self?.probeTiming.reset()
+            self?.lastOfflineStatus = nil
             self?.previousOnline = nil
         }
     }
@@ -50,7 +54,7 @@ final class HotspotMonitor {
     }
 
     private func check(run: Int) {
-        guard isCurrent(run) else { return }
+        guard isCurrent(run), probeTiming.shouldStart(now: ProcessInfo.processInfo.systemUptime) else { return }
         let online = Self.internetAvailable()
         guard isCurrent(run) else { return }
         if previousOnline != online {
@@ -58,18 +62,18 @@ final class HotspotMonitor {
             previousOnline = online
         }
         if online {
+            lastOfflineStatus = nil
             _ = policy.observe(online: true, now: ProcessInfo.processInfo.systemUptime)
             setStatus("Internet available", run: run)
             return
         }
         guard policy.observe(online: false, now: ProcessInfo.processInfo.systemUptime) else {
-            setStatus("Internet unavailable; waiting", run: run)
+            setStatus(lastOfflineStatus ?? "Internet unavailable; waiting", run: run)
             return
         }
         setStatus("Trying recent Personal Hotspot", run: run)
-        EventLog.write("hotspot_attempt_started", [:])
         let process = Process()
-        guard let executable = Bundle.main.executableURL else { setStatus("Hotspot worker unavailable", run: run); EventLog.write("hotspot_attempt_finished", ["outcome": "worker_unavailable"]); return }
+        guard let executable = Bundle.main.executableURL else { lastOfflineStatus = "Hotspot worker unavailable"; setStatus(lastOfflineStatus!, run: run); EventLog.write("hotspot_attempt_finished", ["outcome": "worker_unavailable"]); return }
         process.executableURL = executable
         process.arguments = ["--hotspot-worker"]
         process.standardOutput = FileHandle.nullDevice
@@ -77,8 +81,8 @@ final class HotspotMonitor {
         process.standardInput = FileHandle.nullDevice
         lock.lock()
         guard generation == run else { lock.unlock(); return }
-        do { try process.run(); worker = process; lock.unlock() }
-        catch { lock.unlock(); setStatus("Hotspot worker unavailable", run: run); EventLog.write("hotspot_attempt_finished", ["outcome": "worker_launch_failed"]); return }
+        do { try process.run(); worker = process; EventLog.write("hotspot_attempt_started", [:]); lock.unlock() }
+        catch { lock.unlock(); lastOfflineStatus = "Hotspot worker unavailable"; setStatus(lastOfflineStatus!, run: run); EventLog.write("hotspot_attempt_finished", ["outcome": "worker_launch_failed"]); return }
         let timeout = DispatchWorkItem {
             if process.isRunning {
                 process.terminate()
@@ -92,25 +96,34 @@ final class HotspotMonitor {
         lock.lock(); if worker === process { worker = nil }; lock.unlock()
         guard isCurrent(run) else { return }
         let status = process.terminationReason == .exit ? process.terminationStatus : -1
-        switch status {
-        case 0: setStatus("Joined; checking internet", run: run)
-        case 2: setStatus("Wi-Fi off or recent hotspot unavailable", run: run)
-        case 3: setStatus("Hotspot connected, but internet unavailable", run: run)
-        case 4: setStatus("Internet restored; no switch needed", run: run)
-        case 5: setStatus("Wi-Fi unavailable or off", run: run)
-        case 6: setStatus("No recent Personal Hotspot found", run: run)
-        case 7: setStatus("Personal Hotspot could not be discovered", run: run)
-        case 8: setStatus("Personal Hotspot did not appear in Wi-Fi scan", run: run)
-        case 9: setStatus("Wi-Fi scan failed; check Location access", run: run)
-        case 10: setStatus("Could not join Personal Hotspot", run: run)
-        default: setStatus("Could not join hotspot; will retry", run: run)
-        }
+        if status == 0 { setStatus("Joined; checking internet", run: run) }
+        else if status == 4 { setStatus("Internet restored; no switch needed", run: run) }
+        else { setStatus(statusMessage(for: status), run: run) }
         let outcomes: [Int32: String] = [0: "associated", 2: "unavailable", 3: "already_associated", 4: "internet_recovered", 5: "wifi_unavailable", 6: "no_saved_hotspot", 7: "discovery_failed", 8: "not_in_scan", 9: "scan_failed", 10: "association_failed"]
+        lastOfflineStatus = status == 0 || status == 4 ? nil : statusMessage(for: status)
         EventLog.write("hotspot_attempt_finished", ["result": Int(status), "outcome": outcomes[status] ?? "worker_failed_or_timed_out"])
         if status == 0 {
             let connected = Self.internetAvailable()
             guard isCurrent(run) else { return }
             EventLog.write("hotspot_internet_after_join", ["online": connected])
+            if !connected {
+                lastOfflineStatus = "Hotspot joined; internet unavailable"
+                setStatus("Hotspot joined; internet unavailable", run: run)
+            }
+        }
+    }
+
+    private func statusMessage(for result: Int32) -> String {
+        switch result {
+        case 2: return "Wi-Fi off or recent hotspot unavailable"
+        case 3: return "Hotspot connected, but internet unavailable"
+        case 5: return "Wi-Fi unavailable or off"
+        case 6: return "No recent Personal Hotspot found"
+        case 7: return "Personal Hotspot could not be discovered"
+        case 8: return "Personal Hotspot did not appear in Wi-Fi scan"
+        case 9: return "Wi-Fi scan failed; check Location access"
+        case 10: return "Could not join Personal Hotspot"
+        default: return "Could not join hotspot; will retry"
         }
     }
 

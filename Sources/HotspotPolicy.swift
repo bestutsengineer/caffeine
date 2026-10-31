@@ -25,3 +25,14 @@ struct HotspotRetryPolicy {
     }
     mutating func reset() { failures = 0; lastAttempt = nil }
 }
+
+/// A delayed or coalesced timer must not turn two checks into an instant retry.
+struct HotspotProbeTiming {
+    private var lastStart: TimeInterval?
+    mutating func shouldStart(now: TimeInterval) -> Bool {
+        if let lastStart, now >= lastStart, now - lastStart < 10 { return false }
+        lastStart = now
+        return true
+    }
+    mutating func reset() { lastStart = nil }
+}
