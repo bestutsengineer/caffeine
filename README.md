@@ -1,14 +1,12 @@
 # Caffeine
 
-**Keep your Mac awake—even with the lid closed.** Caffeine is a small macOS menu-bar app for long downloads, background tasks and other work that needs to keep running. Keep your Mac well ventilated while it is awake; don't run it in a bag.
+**Keep your Mac awake—even with the lid closed.** Caffeine keeps downloads and background tasks running while your MacBook is closed.
 
-The name and purpose are inspired by Caffeinate.
+**Press Caps Lock to switch Caffeine on or off.** By default, the key controls Caffeine instead of capitalising text. Its light shows when Caffeine is selected: it briefly blinks every five seconds, or blinks faster when an inactivity timer is set. Check the menu for any battery or thermal protection that may pause it. You can disable the Caps Lock switch in Other Options.
 
-<img src="docs/images/menu.png" alt="Caffeine menu showing Caffeine enabled, battery status, options and diagnostics" width="540">
+<img src="docs/images/menu.png" alt="Caffeine menu" width="650">
 
-<img src="docs/images/options.png" alt="Caffeine Other Options with battery cutoff, virtual display, double-click gesture and sleep and lock settings" width="540">
-
-*Screenshots show an earlier menu and a custom 10% cutoff. New installations default to 15%.*
+Keep your Mac well ventilated while it is awake; don't run it in a bag. The name and purpose are inspired by Caffeinate, and the Caps Lock switch is inspired by [Capsomnia](https://github.com/fuji-mak/Capsomnia).
 
 Requires **macOS 14 or later**. It lives in the menu bar, with no Dock icon. This repository provides source code; see [For Developers](#for-developers) to build and install it. No downloadable installer is currently published.
 
@@ -30,7 +28,7 @@ Click the cup to open the menu. Double-click toggling is off by default and can 
 - **Start at Login:** opens Caffeine when you sign in and helps it recover after a crash.
 - **Diagnostics → macOS Sleep & Lock:** shows your configured sleep, display and password delays. These are settings, not live countdowns. **Diagnostics → Lock Screen Settings…** opens the corresponding system settings.
 - **Headless Virtual Display:** leave this off for ordinary use. Enable it only if a screen-sharing or capture app needs a desktop while the lid is closed and no external monitor is connected. It is experimental and may move windows when the temporary display appears or disappears.
-- **Personal Hotspot Fallback:** off by default. After two failed internet checks (scheduled every 10 seconds), Caffeine tries to activate and join the most recently connected Apple Personal Hotspot; it waits at least five minutes between attempts. Checks contact Apple and Cloudflare. This experimental feature uses undocumented macOS interfaces and may be unavailable, interrupt connections or use mobile data. It requests Location permission for Wi-Fi scanning; the Apple device must be nearby and available through Instant Hotspot. Caffeine does not store its password.
+- **Personal Hotspot Fallback:** off by default. While enabled, Caffeine checks internet access using Apple and Cloudflare, scheduled every 10 seconds. After two consecutive failed checks, it tries to activate and join the most recently connected Apple Personal Hotspot saved by macOS; retries are at least five minutes apart. It checks internet access, so it will not switch just because Wi-Fi is disconnected if another connection provides internet. If the selected hotspot is already connected, it does not reconnect it. The feature is experimental, uses undocumented macOS interfaces, requires Location access for Wi-Fi scanning and a nearby device available through Instant Hotspot, and may fail or use mobile data. Caffeine does not store the hotspot password.
 
 ## Sleep and screen locking
 
