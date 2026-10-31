@@ -49,7 +49,7 @@ enum HotspotWorker {
     }
 
     /// These profile properties are not public API and may disappear after an OS update.
-    private static func lastHotspot(wifi: CWInterface) -> String? {
+    static func lastHotspot(wifi: CWInterface) -> String? {
         guard let profiles = wifi.configuration()?.networkProfiles.array as? [CWNetworkProfile] else { return nil }
         let values: [HotspotProfile] = profiles.compactMap { profile in
             guard profile.responds(to: NSSelectorFromString("isPersonalHotspot")),

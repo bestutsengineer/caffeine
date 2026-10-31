@@ -933,13 +933,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.addButton(withTitle: "Enable")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Prefs.hotspotPausedAfterDisconnect = false
         Prefs.autoHotspot = true
         if hotspotLocation.authorizationStatus == .notDetermined { hotspotLocation.requestWhenInUseAuthorization() }
         hotspot.start()
     }
 
     @objc private func showHotspotHelp() {
-        showAlert("Personal Hotspot Fallback", "Off by default. Caffeine checks internet access through Apple and Cloudflare. After two failed checks, scheduled every 10 seconds, it tries your most recently connected Personal Hotspot, waiting at least five minutes before trying again. The Apple device must be nearby and available through Instant Hotspot. Wi-Fi scanning needs Location permission. This experimental feature uses undocumented macOS interfaces, may interrupt connections and can use mobile data. Caffeine does not store the hotspot password.")
+        showAlert("Personal Hotspot Fallback", "Off by default. Caffeine checks internet access through Apple and Cloudflare. After two failed checks, scheduled every 10 seconds, it tries your most recently connected Personal Hotspot, waiting at least five minutes before trying again. The Apple device must be nearby and available through Instant Hotspot. Wi-Fi scanning needs Location permission. This experimental feature uses undocumented macOS interfaces, may interrupt connections and can use mobile data. After Caffeine joins a hotspot, it pauses fallback if that hotspot disconnects; turn this option off and on to resume. macOS does not reveal whether it was manual or signal loss. Caffeine does not store the hotspot password.")
     }
 
     @objc private func openHotspotLocationSettings() {

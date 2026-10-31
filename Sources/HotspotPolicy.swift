@@ -36,3 +36,11 @@ struct HotspotProbeTiming {
     }
     mutating func reset() { lastStart = nil }
 }
+
+/// A disappearance is ambiguous: it may be a user disconnect or signal loss.
+enum HotspotDisconnectPolicy {
+    static func shouldPause(tracked: String?, current: String?, locationAuthorized: Bool) -> Bool {
+        guard locationAuthorized, let tracked, !tracked.isEmpty else { return false }
+        return current != tracked
+    }
+}

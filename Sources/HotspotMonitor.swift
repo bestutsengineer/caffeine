@@ -1,7 +1,9 @@
 import Foundation
+import CoreWLAN
+import CoreLocation
 
 /// Network checks run only while enabled. The private API runs in a separate process.
-final class HotspotMonitor {
+final class HotspotMonitor: NSObject, CWEventDelegate {
     private let queue = DispatchQueue(label: "caffeine.hotspot", qos: .utility)
     private let lock = NSLock()
     private var timer: DispatchSourceTimer?
@@ -12,6 +14,10 @@ final class HotspotMonitor {
     private var lastOfflineStatus: String?
     private var message = "Off"
     private var previousOnline: Bool?
+    private var trackedHotspot: String?
+    private var wifiClient: CWWiFiClient?
+    private var wifiChangeGeneration = 0
+    private let locationManager = CLLocationManager()
 
     var status: String { lock.lock(); defer { lock.unlock() }; return message }
 
@@ -20,13 +26,28 @@ final class HotspotMonitor {
         lock.lock()
         generation += 1
         let run = generation
-        message = "Checking internet"
+        message = Prefs.hotspotPausedAfterDisconnect ? "Paused after hotspot disconnect; turn off and on to resume" : "Checking internet"
         let timer = DispatchSource.makeTimerSource(queue: queue)
         self.timer = timer
         lock.unlock()
         timer.schedule(deadline: .now(), repeating: 10, leeway: .seconds(1))
         timer.setEventHandler { [weak self] in self?.check(run: run) }
         timer.resume()
+        let client = CWWiFiClient.shared()
+        client.delegate = self
+        do {
+            try client.startMonitoringEvent(with: .ssidDidChange)
+            try client.startMonitoringEvent(with: .powerDidChange)
+            wifiClient = client
+            queue.async { [weak self] in
+                guard let self, self.isCurrent(run), !Prefs.hotspotPausedAfterDisconnect else { return }
+                self.trackCurrentHotspot(reportUnavailable: false)
+            }
+        } catch {
+            try? client.stopMonitoringAllEvents()
+            client.delegate = nil
+            EventLog.write("hotspot_disconnect_monitor_unavailable", [:])
+        }
     }
 
     func stop() {
@@ -37,11 +58,14 @@ final class HotspotMonitor {
         }
         lock.unlock()
         old?.cancel()
+        if let client = wifiClient { try? client.stopMonitoringAllEvents(); client.delegate = nil; wifiClient = nil }
         queue.async { [weak self] in
             self?.policy.reset()
             self?.probeTiming.reset()
             self?.lastOfflineStatus = nil
             self?.previousOnline = nil
+            self?.trackedHotspot = nil
+            self?.wifiChangeGeneration += 1
         }
     }
 
@@ -54,7 +78,7 @@ final class HotspotMonitor {
     }
 
     private func check(run: Int) {
-        guard isCurrent(run), probeTiming.shouldStart(now: ProcessInfo.processInfo.systemUptime) else { return }
+        guard isCurrent(run), !Prefs.hotspotPausedAfterDisconnect, probeTiming.shouldStart(now: ProcessInfo.processInfo.systemUptime) else { return }
         let online = Self.internetAvailable()
         guard isCurrent(run) else { return }
         if previousOnline != online {
@@ -71,6 +95,8 @@ final class HotspotMonitor {
             setStatus(lastOfflineStatus ?? "Internet unavailable; waiting", run: run)
             return
         }
+        // A Wi-Fi notification may be queued behind the internet probe.
+        if let interface = CWWiFiClient.shared().interface(), pauseIfDisconnected(interface) { return }
         setStatus("Trying recent Personal Hotspot", run: run)
         let process = Process()
         guard let executable = Bundle.main.executableURL else { lastOfflineStatus = "Hotspot worker unavailable"; setStatus(lastOfflineStatus!, run: run); EventLog.write("hotspot_attempt_finished", ["outcome": "worker_unavailable"]); return }
@@ -103,6 +129,7 @@ final class HotspotMonitor {
         lastOfflineStatus = status == 0 || status == 4 ? nil : statusMessage(for: status)
         EventLog.write("hotspot_attempt_finished", ["result": Int(status), "outcome": outcomes[status] ?? "worker_failed_or_timed_out"])
         if status == 0 {
+            trackCurrentHotspot(reportUnavailable: true)
             let connected = Self.internetAvailable()
             guard isCurrent(run) else { return }
             EventLog.write("hotspot_internet_after_join", ["online": connected])
@@ -111,6 +138,51 @@ final class HotspotMonitor {
                 setStatus("Hotspot joined; internet unavailable", run: run)
             }
         }
+    }
+
+    private func locationAuthorized() -> Bool {
+        return locationManager.authorizationStatus == .authorizedAlways
+    }
+
+    private func trackCurrentHotspot(reportUnavailable: Bool) {
+        guard locationAuthorized(), let wifi = CWWiFiClient.shared().interface(),
+              let current = wifi.ssid(), !current.isEmpty,
+              current == HotspotWorker.lastHotspot(wifi: wifi) else {
+            if reportUnavailable { EventLog.write("hotspot_disconnect_monitor_unavailable", ["reason": "hotspot_not_identified"]) }
+            return
+        }
+        trackedHotspot = current
+        EventLog.write("hotspot_disconnect_monitor_started", [:])
+    }
+
+    func ssidDidChangeForWiFiInterface(withName interfaceName: String) { scheduleWifiCheck(interfaceName) }
+    func powerStateDidChangeForWiFiInterface(withName interfaceName: String) { scheduleWifiCheck(interfaceName) }
+    private func scheduleWifiCheck(_ interfaceName: String) {
+        queue.async { [weak self] in
+            guard let self, self.trackedHotspot != nil, !Prefs.hotspotPausedAfterDisconnect else { return }
+            self.wifiChangeGeneration += 1
+            let change = self.wifiChangeGeneration
+            self.queue.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self, self.wifiChangeGeneration == change,
+                      let interface = CWWiFiClient.shared().interface(), interface.interfaceName == interfaceName else { return }
+                _ = self.pauseIfDisconnected(interface)
+            }
+        }
+    }
+
+    @discardableResult private func pauseIfDisconnected(_ interface: CWInterface) -> Bool {
+        guard trackedHotspot != nil else { return false }
+        guard locationAuthorized() else {
+            trackedHotspot = nil
+            EventLog.write("hotspot_disconnect_monitor_unavailable", ["reason": "location_unavailable"])
+            return false
+        }
+        guard HotspotDisconnectPolicy.shouldPause(tracked: trackedHotspot, current: interface.ssid(), locationAuthorized: true) else { return false }
+        trackedHotspot = nil
+        Prefs.hotspotPausedAfterDisconnect = true
+        lock.lock(); message = "Paused after hotspot disconnect; turn off and on to resume"; lock.unlock()
+        EventLog.write("hotspot_fallback_paused", ["reason": "hotspot_disconnected", "cause": "unknown"])
+        return true
     }
 
     private func statusMessage(for result: Int32) -> String {

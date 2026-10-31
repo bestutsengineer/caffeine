@@ -36,6 +36,10 @@ enum Prefs {
         get { defaults.bool(forKey: "autoHotspot") }
         set { defaults.set(newValue, forKey: "autoHotspot") }
     }
+    static var hotspotPausedAfterDisconnect: Bool {
+        get { defaults.bool(forKey: "hotspotPausedAfterDisconnect") }
+        set { defaults.set(newValue, forKey: "hotspotPausedAfterDisconnect") }
+    }
     /// Zero disables the inactivity timer.
     static var idleSleepMinutes: Int {
         get { idleDuration.minutes }
