@@ -215,6 +215,8 @@ enum EventLog {
             record["uptimeSeconds"] = uptime
             guard var line = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) else { return }
             line.append(0x0A)
+            HotspotDiagnosticLog.maintain(now: now)
+            if event.hasPrefix("hotspot_") { HotspotDiagnosticLog.append(line, now: now) }
             let fm = FileManager.default
             try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
             if let size = (try? fm.attributesOfItem(atPath: file.path))?[.size] as? Int, size > 5_000_000 {
@@ -228,6 +230,44 @@ enum EventLog {
                 try? handle.close()
             } else {
                 try? line.write(to: file)
+            }
+        }
+    }
+}
+
+/// Privacy-preserving hotspot events, independent of the size-limited general event log.
+/// Called on EventLog's serial queue.
+enum HotspotDiagnosticLog {
+    static let directory = EventLog.directory.appendingPathComponent("hotspot", isDirectory: true)
+    private static var lastPrunedHour: Int?
+    static func maintain(now: Date) {
+        let hour = Int(now.timeIntervalSince1970) / 3600
+        if lastPrunedHour != hour { prune(now: now); lastPrunedHour = hour }
+    }
+    static func append(_ line: Data, now: Date, directory dir: URL = directory) {
+        let fm = FileManager.default, hour = Int(now.timeIntervalSince1970) / 3600
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("events-\(hour).jsonl")
+        if let handle = try? FileHandle(forWritingTo: file) {
+            handle.seekToEndOfFile(); handle.write(line); try? handle.close()
+        } else { try? line.write(to: file) }
+    }
+    static func prune(now: Date, directory dir: URL = directory) {
+        let cutoff = now.timeIntervalSince1970 - 30 * 24 * 60 * 60
+        let boundary = Int(cutoff) / 3600
+        let parser = ISO8601DateFormatter(); parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        for file in (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [] {
+            let name = file.lastPathComponent
+            guard name.hasPrefix("events-"), name.hasSuffix(".jsonl"), let hour = Int(name.dropFirst(7).dropLast(6)) else { continue }
+            if hour < boundary { try? FileManager.default.removeItem(at: file) }
+            else if hour == boundary, let contents = try? String(contentsOf: file, encoding: .utf8) {
+                let kept = contents.split(separator: "\n").filter { row in
+                    guard let data = String(row).data(using: .utf8), let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                          let timestamp = object["t"] as? String, let date = parser.date(from: timestamp) else { return false }
+                    return date.timeIntervalSince1970 >= cutoff
+                }
+                if kept.isEmpty { try? FileManager.default.removeItem(at: file) }
+                else { try? (kept.joined(separator: "\n") + "\n").write(to: file, atomically: true, encoding: .utf8) }
             }
         }
     }

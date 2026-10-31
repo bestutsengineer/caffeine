@@ -29,7 +29,10 @@ final class HotspotMonitor {
 
     func stop() {
         lock.lock(); generation += 1; let old = timer; timer = nil; message = "Off"
-        if let worker, worker.isRunning { worker.terminate() }
+        if let worker, worker.isRunning {
+            EventLog.write("hotspot_attempt_cancelled", ["reason": "monitor_stopped"])
+            worker.terminate()
+        }
         lock.unlock()
         old?.cancel()
         queue.async { [weak self] in
@@ -66,7 +69,7 @@ final class HotspotMonitor {
         setStatus("Trying recent Personal Hotspot", run: run)
         EventLog.write("hotspot_attempt_started", [:])
         let process = Process()
-        guard let executable = Bundle.main.executableURL else { setStatus("Hotspot worker unavailable", run: run); return }
+        guard let executable = Bundle.main.executableURL else { setStatus("Hotspot worker unavailable", run: run); EventLog.write("hotspot_attempt_finished", ["outcome": "worker_unavailable"]); return }
         process.executableURL = executable
         process.arguments = ["--hotspot-worker"]
         process.standardOutput = FileHandle.nullDevice
@@ -75,7 +78,7 @@ final class HotspotMonitor {
         lock.lock()
         guard generation == run else { lock.unlock(); return }
         do { try process.run(); worker = process; lock.unlock() }
-        catch { lock.unlock(); setStatus("Hotspot worker unavailable", run: run); return }
+        catch { lock.unlock(); setStatus("Hotspot worker unavailable", run: run); EventLog.write("hotspot_attempt_finished", ["outcome": "worker_launch_failed"]); return }
         let timeout = DispatchWorkItem {
             if process.isRunning {
                 process.terminate()
@@ -102,7 +105,13 @@ final class HotspotMonitor {
         case 10: setStatus("Could not join Personal Hotspot", run: run)
         default: setStatus("Could not join hotspot; will retry", run: run)
         }
-        EventLog.write("hotspot_attempt_finished", ["result": Int(status)])
+        let outcomes: [Int32: String] = [0: "associated", 2: "unavailable", 3: "already_associated", 4: "internet_recovered", 5: "wifi_unavailable", 6: "no_saved_hotspot", 7: "discovery_failed", 8: "not_in_scan", 9: "scan_failed", 10: "association_failed"]
+        EventLog.write("hotspot_attempt_finished", ["result": Int(status), "outcome": outcomes[status] ?? "worker_failed_or_timed_out"])
+        if status == 0 {
+            let connected = Self.internetAvailable()
+            guard isCurrent(run) else { return }
+            EventLog.write("hotspot_internet_after_join", ["online": connected])
+        }
     }
 
     static func internetAvailable() -> Bool {

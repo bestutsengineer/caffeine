@@ -220,7 +220,30 @@ enum SelfTest {
         check(CLI.validSetting("doubleClickToToggle=1") && !CLI.validSetting("doubleClickToToggle=2"), "gesture CLI setting validated")
     }
 
+    private static func hotspotRetentionTests() {
+        print("== Hotspot diagnostics retention")
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("caffeine-hotspot-test-" + UUID().uuidString)
+        defer { try? fm.removeItem(at: dir) }
+        do {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            let now = Date(timeIntervalSince1970: 2_000_001_800)
+            let cutoff = now.timeIntervalSince1970 - 30 * 24 * 3600
+            let hour = Int(cutoff) / 3600
+            let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            func row(_ seconds: Double) -> String { "{\"t\":\"\(formatter.string(from: Date(timeIntervalSince1970: seconds)))\"}\n" }
+            let boundary = dir.appendingPathComponent("events-\(hour).jsonl")
+            let old = dir.appendingPathComponent("events-\(hour-1).jsonl")
+            try row(cutoff - 1).write(to: old, atomically: true, encoding: .utf8)
+            try (row(cutoff - 1) + row(cutoff + 1)).write(to: boundary, atomically: true, encoding: .utf8)
+            HotspotDiagnosticLog.prune(now: now, directory: dir)
+            check(!fm.fileExists(atPath: old.path), "old hotspot log is removed")
+            check(try String(contentsOf: boundary, encoding: .utf8) == row(cutoff + 1), "boundary keeps only 30-day hotspot records")
+        } catch { check(false, "hotspot retention test setup") }
+    }
+
     private static func performanceRetentionTests() {
+        hotspotRetentionTests()
         print("== Performance retention")
         let fm = FileManager.default
         let directory = fm.temporaryDirectory.appendingPathComponent("caffeine-perf-test-" + UUID().uuidString)

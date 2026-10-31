@@ -85,7 +85,7 @@ Run `~/Applications/Caffeine.app/Contents/MacOS/Caffeine` with:
 --set startAtLogin=0|1
 ```
 
-Settings: `~/Library/Preferences/local.caffeine.plist`. Status: `~/Library/Application Support/Caffeine/state.json`. Rotating logs: `~/Library/Logs/Caffeine/events.log`. Logs distinguish system sleep, display sleep and observed lock events; they cannot prove events they did not record.
+Settings: `~/Library/Preferences/local.caffeine.plist`. Status: `~/Library/Application Support/Caffeine/state.json`. Size-rotated event logs: `~/Library/Logs/Caffeine/events.log` and `events.1.log`. Hotspot events are also kept for 30 days in `~/Library/Logs/Caffeine/hotspot/`, including association outcomes and the following internet check. Logs distinguish system sleep, display sleep and observed lock events; they cannot prove events they did not record.
 
 The virtual display uses private `CGVirtualDisplay` API. It is removed when the lid opens, a real display becomes available or protection stops. Existing preferences are preserved on upgrade. `--test-virtual-display` briefly creates a real display; debug sensor simulation requires `CAFFEINE_DEBUG=1`.
 

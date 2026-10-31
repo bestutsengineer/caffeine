@@ -939,7 +939,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showHotspotHelp() {
-        showAlert("Personal Hotspot Fallback", "Off by default. Caffeine checks internet access through Apple and Cloudflare. After three failed checks it tries your most recently connected Personal Hotspot, waiting at least five minutes before trying again. The Apple device must be nearby and available through Instant Hotspot. Wi-Fi scanning needs Location permission. This experimental feature uses undocumented macOS interfaces, may interrupt connections and can use mobile data. Caffeine does not store the hotspot password.")
+        showAlert("Personal Hotspot Fallback", "Off by default. Caffeine checks internet access through Apple and Cloudflare. After two failed checks, scheduled every 10 seconds, it tries your most recently connected Personal Hotspot, waiting at least five minutes before trying again. The Apple device must be nearby and available through Instant Hotspot. Wi-Fi scanning needs Location permission. This experimental feature uses undocumented macOS interfaces, may interrupt connections and can use mobile data. Caffeine does not store the hotspot password.")
     }
 
     @objc private func openHotspotLocationSettings() {
